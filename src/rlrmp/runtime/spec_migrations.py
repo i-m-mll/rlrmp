@@ -128,25 +128,6 @@ DELAYED_REACH_BANK_EVAL_PARAMS_KIND = "RLRMPDelayedReachBankEvaluationParams"
 DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.delayed_reach_bank.params"
 DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.delayed_reach_bank.params.v1"
 
-LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVAL_PARAMS_KIND = (
-    "RLRMPLinearRecurrentAugmentedReferenceEvaluationParams"
-)
-LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVAL_PARAMS_SCHEMA_ID = (
-    "rlrmp.spec.evaluation.linear_recurrent_augmented_reference"
-)
-LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVAL_PARAMS_SCHEMA_VERSION = (
-    "rlrmp.spec.evaluation.linear_recurrent_augmented_reference.v1"
-)
-LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_KIND = (
-    "RLRMPLinearRecurrentAugmentedReferenceEvidence"
-)
-LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_SCHEMA_ID = (
-    "rlrmp.linear_recurrent_augmented_reference_evidence"
-)
-LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_SCHEMA_VERSION = (
-    "rlrmp.linear_recurrent_augmented_reference_evidence.v1"
-)
-
 STANDARD_MATRIX_EVAL_PARAMS_KIND = "RLRMPStandardMatrixEvaluationParams"
 STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID = "rlrmp.standard_matrix_evaluation.params"
 STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.standard_matrix_evaluation.params.v2"
@@ -655,32 +636,6 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             rejected_old_versions=("rlrmp.eval.delayed_reach_bank.params.v0",),
         ),
         _family(
-            LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVAL_PARAMS_KIND,
-            LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVAL_PARAMS_SCHEMA_ID,
-            LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVAL_PARAMS_SCHEMA_VERSION,
-            emitted_by=("rlrmp.eval.linear_recurrent_augmented_reference",),
-            consumed_by=("Feedbax EvaluationRunSpec.params",),
-            description=(
-                "Governed scientific choices and an excluded machine-local custody binding "
-                "for same-basis linear-recurrent augmented reference evidence."
-            ),
-            rejected_old_versions=(
-                "rlrmp.spec.evaluation.linear_recurrent_augmented_reference.v0",
-            ),
-        ),
-        _family(
-            LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_KIND,
-            LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_SCHEMA_ID,
-            LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_SCHEMA_VERSION,
-            emitted_by=("rlrmp.eval.linear_recurrent_augmented_reference",),
-            consumed_by=("rlrmp.analysis.standard_certificate",),
-            description=(
-                "Governed same-coordinate augmented reference evidence with "
-                "named exact-byte component identities."
-            ),
-            rejected_old_versions=("rlrmp.linear_recurrent_augmented_reference_evidence.v0",),
-        ),
-        _family(
             STANDARD_MATRIX_EVAL_PARAMS_KIND,
             STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID,
             STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION,
@@ -702,7 +657,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             TRAINING_AUTHORING_INTENT_SCHEMA_ID,
             TRAINING_AUTHORING_INTENT_SCHEMA_VERSION,
             emitted_by=(
-                "rlrmp.train.heterogeneous_training_matrix",
+                "rlrmp.train.matrix_lowering",
                 "rlrmp training-matrix emitters",
             ),
             consumed_by=(
@@ -911,12 +866,6 @@ __all__ = [
     "HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION",
     "LEGACY_TRAINING_CONFIG_KIND",
     "LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF",
-    "LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVAL_PARAMS_KIND",
-    "LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVAL_PARAMS_SCHEMA_ID",
-    "LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVAL_PARAMS_SCHEMA_VERSION",
-    "LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_KIND",
-    "LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_SCHEMA_ID",
-    "LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_SCHEMA_VERSION",
     "OBJECTIVE_COMPARATOR_SIDECAR_KIND",
     "OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID",
     "OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION",

@@ -30,10 +30,6 @@ from feedbax.persistence import (
 )
 from feedbax.training import TrainingDiagnostics
 from rlrmp.analysis import training_diagnostics as td
-from rlrmp.train.orchestration_manifest_index import (
-    OrchestrationTrainingManifestMetadata,
-    OrchestrationTrainingManifestRef,
-)
 
 
 def _registry() -> ExperimentRegistry:
@@ -336,10 +332,10 @@ def _historical_exact_parent_fixture(
         logical_name=manifest.id,
         media_type="application/json",
     )
-    exact_ref = OrchestrationTrainingManifestRef(
+    exact_ref = td.ExactTrainingManifestRef(
         id=manifest.id,
         uri=manifest_custody.uri,
-        metadata=OrchestrationTrainingManifestMetadata(
+        metadata=td.ExactTrainingManifestMetadata(
             manifest_sha256=manifest_custody.sha256,
             size_bytes=manifest_custody.size_bytes,
             run_set_id="historical-m1-run-set",

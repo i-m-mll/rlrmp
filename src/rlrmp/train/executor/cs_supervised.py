@@ -2159,10 +2159,10 @@ def make_delayed_cosine_schedule(
 
 
 def _where_train(hps: TreeNamespace | None = None) -> dict[int, Callable[[Any], tuple[Any, ...]]]:
+    del hps
+
     def where_train_fn(model):
         net = model.nodes["net"]
-        if getattr(hps, "hidden_type", None) == "static_linear":
-            return (net.gain,)
         return staged_network_trainable_parts(net)
 
     return {0: where_train_fn}

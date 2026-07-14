@@ -14,8 +14,8 @@ from rlrmp.runtime.training_run_specs import register_rlrmp_cs_supervised_method
 from rlrmp.train.adaptive_epsilon_native import (
     ensure_adaptive_epsilon_training_method_registered,
 )
-from rlrmp.train.heterogeneous_training_matrix import (
-    DISTRIBUTIONS,
+from rlrmp.train.gru_training_base import (
+    TRAINING_DISTRIBUTIONS,
     author_gru_training_base,
 )
 from rlrmp.train.training_base_routes import route_training_base
@@ -31,7 +31,7 @@ def main() -> int:
     parser.add_argument("--row-id", required=True)
     parser.add_argument(
         "--training-distribution",
-        choices=DISTRIBUTIONS,
+        choices=TRAINING_DISTRIBUTIONS,
         default="nominal",
     )
     args = parser.parse_args()

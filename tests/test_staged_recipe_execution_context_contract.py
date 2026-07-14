@@ -27,7 +27,6 @@ EXPECTED_RLRMP_EVALUATION_TYPES = (
     "rlrmp.eval.delayed_reach_bank",
     "rlrmp.eval.feedback_ablation",
     "rlrmp.eval.gru_diagnostics",
-    "rlrmp.eval.linear_recurrent_augmented_reference",
     "rlrmp.eval.output_feedback_rollout_recovery",
     "rlrmp.eval.perturbation_response_bank",
     "rlrmp.eval.worst_case_epsilon",

@@ -56,11 +56,7 @@ RLRMP_TRAINING_ROW_LOWERER_ID = "rlrmp.train.cs_nominal_gru.authoring"
 RLRMP_TRAINING_ROW_LOWERER_VERSION = "v2"
 RLRMP_SCIENCE_LOWERER_VERSION = "v1"
 RLRMP_TRAINING_ARCHITECTURE_CONTRACT = "rlrmp.heterogeneous_cs_architecture.v1"
-RLRMP_TRAINING_ARCHITECTURES = (
-    "gru",
-    "time_constrained_free_gain",
-    "linear_recurrence",
-)
+RLRMP_TRAINING_ARCHITECTURES = ("gru",)
 RLRMP_TRAINING_ARCHITECTURE_LOWERER_ID = "rlrmp.heterogeneous_cs_architecture"
 RLRMP_TRAINING_ARCHITECTURE_LOWERER_VERSION = "v1"
 
@@ -161,27 +157,9 @@ def _dispatch_architecture(
     """Dispatch one canonical base through the public architecture providers."""
 
     if architecture == "gru":
-        from rlrmp.train.heterogeneous_training_matrix import author_gru_training_base
+        from rlrmp.train.gru_training_base import author_gru_training_base
 
         return author_gru_training_base(
-            canonical,
-            training_distribution=training_distribution,
-        )
-    if architecture == "time_constrained_free_gain":
-        from rlrmp.train.static_linear_native import (
-            author_static_linear_training_base_from_canonical,
-        )
-
-        return author_static_linear_training_base_from_canonical(
-            canonical,
-            training_distribution=training_distribution,
-        )
-    if architecture == "linear_recurrence":
-        from rlrmp.train.linear_recurrent_native import (
-            author_linear_recurrent_training_base_from_canonical,
-        )
-
-        return author_linear_recurrent_training_base_from_canonical(
             canonical,
             training_distribution=training_distribution,
         )

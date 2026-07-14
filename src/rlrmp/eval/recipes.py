@@ -18,15 +18,6 @@ from feedbax.contracts.manifest import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 
-from rlrmp.eval.linear_recurrent_augmented_reference import (
-    LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVALUATION_TYPE,
-    LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_ROLE,
-    LinearRecurrentAugmentedReferenceParams,
-    non_nominal_augmented_reference_outcome,
-    produce_governed_linear_recurrent_augmented_reference_evidence,
-    scientific_evaluation_identity,
-    serialize_governed_evidence,
-)
 from rlrmp.runtime.params_models import params_model_for, register_params_model
 from rlrmp.eval.feedback_ablation import (
     evaluate_feedback_ablation_runs,
@@ -43,7 +34,6 @@ from rlrmp.runtime.spec_migrations import (
     DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
     FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
     GRU_DIAGNOSTICS_EVAL_PARAMS_KIND,
-    LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVAL_PARAMS_KIND,
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
     WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
     accept_rlrmp_spec_payload,
@@ -66,9 +56,6 @@ _RECIPE_PARAM_KINDS = {
     FEEDBACK_ABLATION_EVALUATION_TYPE: FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
     WORST_CASE_EPSILON_EVALUATION_TYPE: WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
     DELAYED_REACH_BANK_EVALUATION_TYPE: DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
-    LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVALUATION_TYPE: (
-        LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVAL_PARAMS_KIND
-    ),
 }
 
 
@@ -228,26 +215,11 @@ _PARAMS_MODEL_BY_RECIPE = {
     WORST_CASE_EPSILON_EVALUATION_TYPE: WorstCaseEpsilonEvalParams,
     BROAD_EPSILON_EVALUATION_TYPE: BroadEpsilonEvalParams,
     DELAYED_REACH_BANK_EVALUATION_TYPE: DelayedReachBankEvalParams,
-    LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVALUATION_TYPE: (LinearRecurrentAugmentedReferenceParams),
 }
 
 
 def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
     """Register rlrmp's manifest-canonical evaluation recipes."""
-
-    from rlrmp.analysis.standard_certificate import (
-        register_standard_certificate_component_provider,
-    )
-    from rlrmp.eval.linear_recurrent_certificate import (
-        LINEAR_RECURRENT_AUGMENTED_PROVIDER,
-        linear_recurrent_augmented_component_kwargs,
-    )
-
-    register_standard_certificate_component_provider(
-        LINEAR_RECURRENT_AUGMENTED_PROVIDER,
-        linear_recurrent_augmented_component_kwargs,
-        replace=replace,
-    )
 
     for recipe_name, model_class in _PARAMS_MODEL_BY_RECIPE.items():
         register_params_model(recipe_name, model_class, replace=replace)
@@ -292,62 +264,6 @@ def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
         delayed_reach_bank_recipe,
         replace=replace,
     )
-    register_evaluation_recipe(
-        LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVALUATION_TYPE,
-        linear_recurrent_augmented_reference_recipe,
-        replace=replace,
-    )
-
-
-def linear_recurrent_augmented_reference_recipe(
-    run_spec: EvaluationRunSpec,
-    root: Path,
-    _states_path: Path,
-    _execution_context: StagedExecutionContext,
-) -> EvaluationRecipeResult:
-    """Produce exact same-basis evidence from public governed runtime authority."""
-
-    validated, _params = _validated_params(run_spec)
-    if not isinstance(validated, LinearRecurrentAugmentedReferenceParams):
-        raise TypeError("linear recurrent augmented reference params registration drifted")
-    if validated.evaluation_lens != "nominal_clean":
-        outcome = non_nominal_augmented_reference_outcome(validated)
-        return EvaluationRecipeResult(
-            states=outcome,
-            summary_metrics={},
-            metadata={
-                "states_schema": outcome["schema"],
-                "product_role": LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_ROLE,
-                "status": outcome["status"],
-                "reason_code": outcome["reason_code"],
-                "evaluation_lens": validated.evaluation_lens,
-            },
-        )
-    manifest_identity = scientific_evaluation_identity(run_spec)
-    evidence = produce_governed_linear_recurrent_augmented_reference_evidence(
-        run_spec,
-        validated,
-        manifest_root=root,
-        checkpoint_root=validated.checkpoint_custody_root,
-        evaluation_manifest_identity=manifest_identity,
-    )
-    return EvaluationRecipeResult(
-        states=serialize_governed_evidence(evidence),
-        summary_metrics={
-            "n_trials": int(evidence.augmented_states.shape[0]),
-            "horizon": int(evidence.recurrence_diagnostics["horizon"]),
-            "augmented_state_dim": int(evidence.augmented_states.shape[-1]),
-        },
-        metadata={
-            "states_schema": evidence.schema_version,
-            "product_role": LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVIDENCE_ROLE,
-            "basis_identity": evidence.basis_identity,
-            "reference_identity": evidence.reference_identity,
-            "evidence_identity": evidence.evidence_identity,
-        },
-    )
-
-
 def center_out_ensemble_recipe(
     run_spec: EvaluationRunSpec,
     root: Path,
@@ -1387,8 +1303,6 @@ __all__ = [
     "FeedbackAblationEvalParams",
     "GRU_DIAGNOSTICS_EVALUATION_TYPE",
     "GRUDiagnosticsEvalParams",
-    "LINEAR_RECURRENT_AUGMENTED_REFERENCE_EVALUATION_TYPE",
-    "LinearRecurrentAugmentedReferenceParams",
     "PerturbationResponseBankEvalParams",
     "PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE",
     "WorstCaseEpsilonEvalParams",
@@ -1399,7 +1313,6 @@ __all__ = [
     "delayed_velocity_profile_payload",
     "feedback_ablation_recipe",
     "gru_diagnostics_recipe",
-    "linear_recurrent_augmented_reference_recipe",
     "perturbation_response_bank_recipe",
     "register_rlrmp_evaluation_recipes",
     "worst_case_epsilon_recipe",

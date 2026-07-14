@@ -6,7 +6,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -20,11 +20,11 @@ from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
 from feedbax.persistence import IMMUTABLE_ARTIFACT_BLOB_STORAGE_BACKEND
 from feedbax.training import TrainingDiagnostics
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from rlrmp.io import read_json, update_marked_section
 from rlrmp.mappings import as_mapping as _mapping
 from rlrmp.paths import REPO_ROOT
-from rlrmp.train.orchestration_manifest_index import OrchestrationTrainingManifestRef
 
 TRAINING_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.training_diagnostics_summary"
 TRAINING_DIAGNOSTICS_SCHEMA_VERSION = "rlrmp.training_diagnostics_summary.v1"
@@ -33,6 +33,53 @@ NATIVE_DIAGNOSTICS_SCHEMA_VERSION = "feedbax.manifest.training_diagnostics.v1"
 ARTIFACT_ID_PREFIX = "artifact://sha256/"
 
 ArtifactBytesResolver = Callable[[ArtifactRef], bytes]
+
+
+class _StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class ExactTrainingManifestMetadata(_StrictModel):
+    """Authenticated orchestration metadata for an immutable training manifest."""
+
+    manifest_sha256: str
+    size_bytes: int = Field(ge=0)
+    run_set_id: str
+    row_id: str
+    manifest_status: Literal["completed"] = "completed"
+    registration_status: Literal["completed"] = "completed"
+    conformance_overall: Literal["pass"] = "pass"
+    certificate_sha256: str
+    planned_run_id: str
+
+    @field_validator("manifest_sha256", "certificate_sha256")
+    @classmethod
+    def _validate_sha256(cls, value: str) -> str:
+        if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+            raise ValueError("expected a lowercase SHA-256 digest")
+        return value
+
+
+class ExactTrainingManifestRef(_StrictModel):
+    """Exact immutable training-manifest reference accepted as a ParentRef."""
+
+    kind: Literal["TrainingRunManifest"] = "TrainingRunManifest"
+    id: str
+    role: Literal["training_run"] = "training_run"
+    uri: str
+    metadata: ExactTrainingManifestMetadata
+
+    @field_validator("id", "uri")
+    @classmethod
+    def _nonempty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("manifest id and URI must be non-empty")
+        return value
+
+    def to_parent_ref(self) -> ParentRef:
+        """Return the exact Feedbax ParentRef representation."""
+
+        return ParentRef.model_validate(self.model_dump(mode="json"))
 
 DEFAULT_METRICS = (
     "train_loss__total",
@@ -440,7 +487,7 @@ def _provider_backed_training_authority(
             "Exact training manifest ref lacks complete authenticated metadata: "
             + ", ".join(missing_metadata)
         )
-    exact_ref = OrchestrationTrainingManifestRef.model_validate(
+    exact_ref = ExactTrainingManifestRef.model_validate(
         training_manifest_ref.model_dump(mode="json")
     )
     metadata = exact_ref.metadata

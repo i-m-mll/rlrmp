@@ -4,11 +4,6 @@
 schema_version = 1
 
 [[violations]]
-path = "results/158b580/runs/matrix.json.artifact.json"
-owner = "ee7a6f4"
-reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: absolute_filesystem_path_in_spec."
-
-[[violations]]
 path = "results/1ab1fef/runs/epsilon_scaled_short_3500to1000.json"
 owner = "1ab1fef"
 reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."

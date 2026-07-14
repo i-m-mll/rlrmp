@@ -40,11 +40,6 @@ from rlrmp.runtime.training_run_specs import (
 )
 from rlrmp.train.executor.cs_supervised import _learning_rate_schedule
 from rlrmp.train.executor.slots import CS_SUPERVISED_METHOD_REF
-from rlrmp.train.heterogeneous_training_matrix import (
-    ARCHITECTURES,
-    DISTRIBUTIONS,
-    author_training_run_matrix,
-)
 from rlrmp.train.matrix_lowering import (
     RLRMP_TRAINING_ARCHITECTURE_LOWERER_ID,
     RLRMP_TRAINING_ARCHITECTURE_LOWERER_VERSION,
@@ -120,32 +115,6 @@ def _materialize(matrix: TrainingRunMatrixSpec, tmp_path: Path):
         repo_root=tmp_path,
         row_lowerer=lower_rlrmp_training_row,
         row_validator=_validate_training_spec,
-    )
-
-
-def _heterogeneous_matrix(tmp_path: Path) -> TrainingRunMatrixSpec:
-    intent = RlrmpTrainingAuthoringIntent(
-        config=CsNominalGruConfig(
-            issue="5816bf0",
-            output_dir="_artifacts/5816bf0/runs/base",
-            spec_dir="results/5816bf0/runs/base",
-            controller_architecture="gru",
-            dry_run=True,
-            smoke=True,
-            target_relative_multitarget=True,
-            force_filter_feedback=True,
-            broad_epsilon_pgd_training=False,
-        )
-    )
-    payload = intent.model_dump(mode="json", exclude_none=True)
-    base_path = tmp_path / "results/5816bf0/runs/base.intent.json"
-    base_path.parent.mkdir(parents=True, exist_ok=True)
-    base_path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
-    return author_training_run_matrix(
-        payload,
-        issue="5816bf0",
-        base_ref=base_path,
-        repo_root=tmp_path,
     )
 
 
@@ -242,13 +211,12 @@ def test_compact_intent_excludes_compiled_and_escape_hatch_surfaces(
         with pytest.raises(ValidationError):
             RlrmpTrainingAuthoringIntent.model_validate(rejected)
 
-    runtime_static_config = CsNominalGruConfig(
-        issue="5816bf0",
-        output_dir="_artifacts/5816bf0/runs/static",
-        controller_architecture="static_linear",
-    )
-    with pytest.raises(ValidationError, match="public authored architecture"):
-        RlrmpTrainingAuthoringIntent(config=runtime_static_config)
+    with pytest.raises(ValidationError):
+        CsNominalGruConfig(
+            issue="5816bf0",
+            output_dir="_artifacts/5816bf0/runs/static",
+            controller_architecture="static_linear",
+        )
 
 
 def test_compact_2x2_matrix_relowers_complete_consistent_training_specs(
@@ -353,115 +321,9 @@ def test_compact_2x2_matrix_relowers_complete_consistent_training_specs(
     }
 
 
-def test_compact_six_row_matrix_dispatches_through_public_architecture_providers(
-    tmp_path: Path,
-) -> None:
-    matrix = _heterogeneous_matrix(tmp_path)
-    materialized = materialize_rlrmp_training_matrix(
-        matrix,
-        repo_root=tmp_path,
-    )
-    repeated = materialize_rlrmp_training_matrix(matrix, repo_root=tmp_path)
-
-    assert [row.row_id for row in materialized.rows] == [
-        f"{architecture}.{distribution}"
-        for architecture in ARCHITECTURES
-        for distribution in DISTRIBUTIONS
-    ]
-    assert [row.planned_run_id for row in materialized.rows] == [
-        row.planned_run_id for row in repeated.rows
-    ]
-    assert [row.provenance.authored_payload_hash for row in materialized.rows] == [
-        row.provenance.authored_payload_hash for row in repeated.rows
-    ]
-    assert [row.provenance.lowered_execution_payload_hash for row in materialized.rows] == [
-        row.provenance.lowered_execution_payload_hash for row in repeated.rows
-    ]
-    expected_contracts = {
-        "gru": ("gru", "empirical_nonlinear"),
-        "time_constrained_free_gain": ("static_linear", "static_gain"),
-        "linear_recurrence": ("linear_recurrence", "augmented_linear"),
-    }
-    expected_optimizer: dict[str, Any] | None = None
-    for row in materialized.rows:
-        architecture, distribution = row.row_id.split(".", maxsplit=1)
-        robust = distribution == "broad_epsilon_pgd"
-        spec = row.spec
-        assert spec is not None
-        assert "optimizer" not in row.authored_payload
-        assert row.provenance.authored_payload_hash == training_spec_sha256(row.authored_payload)
-
-        runtime_architecture, certificate_mode = expected_contracts[architecture]
-        assert row.authored_payload["config"]["controller_architecture"] == architecture
-        assert row.authored_payload["config"]["broad_epsilon_pgd_training"] is robust
-        assert spec.method_payload.payload["config"]["controller_architecture"] == (
-            runtime_architecture
-        )
-        assert spec.metadata["controller_architecture"] == architecture
-        assert spec.metadata["certificate_mode"] == certificate_mode
-        assert spec.metadata["training_distribution"] == ("broad_epsilon" if robust else "nominal")
-        assert spec.metadata["training_method_distribution"] == distribution
-        assert spec.method_payload.metadata["training_distribution"] == distribution
-
-        method_payload = spec.method_payload.payload
-        optimizer = method_payload["optimizer"]
-        config = method_payload["config"]
-        schedule = optimizer["lr_schedule"]
-        assert optimizer["type"] == "adamw"
-        assert optimizer["params"] == {"weight_decay": 0.0}
-        assert schedule["origin"] == {"kind": "run_start", "batch": None}
-        assert schedule["kind"] == (
-            "warmup_cosine" if config["lr_warmup_batches"] > 0 else "delayed_cosine"
-        )
-        assert schedule["learning_rate_0"] == pytest.approx(config["controller_lr"])
-        assert schedule["total_steps"] == method_payload["n_train_batches"]
-        assert schedule["constant_lr_iterations"] == config["lr_warmup_batches"]
-        assert schedule["warmup_init_fraction"] == pytest.approx(config["lr_warmup_init_fraction"])
-        assert schedule["cosine_annealing_alpha"] == pytest.approx(config["lr_cosine_alpha"])
-        assert spec.metadata["resume_context"] == {
-            "schedule_origin_step": 0,
-            "current_step": 0,
-            "optimizer_count_at_current_step": 0,
-        }
-        assert spec.metadata["optimizer_build_context"] == spec.metadata["resume_context"]
-        if expected_optimizer is None:
-            expected_optimizer = optimizer
-        else:
-            assert optimizer == expected_optimizer
-
-        artifact_root = f"_artifacts/5816bf0/runs/{row.row_id}"
-        tracked_spec_dir = f"results/5816bf0/runs/{row.row_id}"
-        assert spec.artifacts.artifact_root == artifact_root
-        checkpoint_policy = spec.method_payload.payload["checkpoint_policy"]
-        assert checkpoint_policy["artifact_root"] == artifact_root
-        assert checkpoint_policy["tracked_spec_dir"] == tracked_spec_dir
-
-        pre_step = spec.method_payload.payload.get("pre_step")
-        assert (pre_step is not None and pre_step["enabled"] is True) is robust
-        assert row.provenance.lowerer_identities[-1].model_dump() == {
-            "lowerer_id": RLRMP_TRAINING_ARCHITECTURE_LOWERER_ID,
-            "lowerer_version": RLRMP_TRAINING_ARCHITECTURE_LOWERER_VERSION,
-        }
-
-        graph = spec.graph.inline
-        assert graph is not None
-        if architecture == "time_constrained_free_gain":
-            assert spec.training_config.network_type == "static_linear"
-            assert graph["nodes"]["net"]["type"] == "AffineFeedbackController"
-            assert len(graph["nodes"]["net"]["params"]["gain"][0]) == 6
-        elif architecture == "linear_recurrence":
-            assert spec.training_config.network_type == "linear_recurrence"
-            assert graph["subgraphs"]["net"]["nodes"]["cell"]["type"] == "VanillaRNN"
-        else:
-            assert spec.training_config.network_type == "gru"
-            assert graph["subgraphs"]["net"]["nodes"]["cell"]["type"] == "GRU"
-
-
 def test_fresh_cs_row_passes_public_schedule_realization_preflight(tmp_path: Path) -> None:
-    materialized = materialize_rlrmp_training_matrix(
-        _heterogeneous_matrix(tmp_path),
-        repo_root=tmp_path,
-    )
+    matrix, _intent_payload = _compact_matrix(tmp_path)
+    materialized = materialize_rlrmp_training_matrix(matrix, repo_root=tmp_path)
     spec = materialized.rows[0].spec
     assert spec is not None
 
@@ -485,10 +347,8 @@ def test_fresh_cs_row_passes_public_schedule_realization_preflight(tmp_path: Pat
 
 
 def test_cs_typed_optimizer_rejects_runtime_config_drift(tmp_path: Path) -> None:
-    materialized = materialize_rlrmp_training_matrix(
-        _heterogeneous_matrix(tmp_path),
-        repo_root=tmp_path,
-    )
+    matrix, _intent_payload = _compact_matrix(tmp_path)
+    materialized = materialize_rlrmp_training_matrix(matrix, repo_root=tmp_path)
     spec = materialized.rows[0].spec
     assert spec is not None
     payload = deepcopy(spec.method_payload.payload)

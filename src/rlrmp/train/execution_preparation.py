@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from functools import partial
 from typing import Any
 
 import jax.random as jr
 from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY
-from feedbax.models.networks import LeakyRNNCell
-from feedbax.models.support import identity_func
 from feedbax.training import (
     ExecutionPreparationRegistration,
     ExecutionPreparationRequest,
@@ -62,18 +59,7 @@ def _runtime_config(config: dict[str, Any]) -> tuple[Any, Any]:
     args = _config_namespace(config)
     hps = build_hps(args)
     architecture = str(config.get("controller_architecture", "gru"))
-    if architecture == "static_linear":
-        hps = hps | {"hidden_type": "static_linear"}
-    elif architecture == "linear_recurrence":
-        hps = hps | {
-            "hidden_type": partial(
-                LeakyRNNCell,
-                use_bias=False,
-                nonlinearity=identity_func,
-            ),
-            "model": hps.model | {"initial_hidden_encoder": False},
-        }
-    elif architecture != "gru":
+    if architecture != "gru":
         raise ValueError(f"unsupported C&S controller_architecture {architecture!r}")
     return args, hps
 
