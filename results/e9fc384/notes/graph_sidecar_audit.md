@@ -17,13 +17,12 @@ and **audited content hash**, not by production date or file path alone.
 returned exactly **38** tracked files at audit time, matching the count expected
 by the issue spec. All 38 were audited; no additional patterns were needed.
 Issue `b6b5502` later retired the two known-wrong `30f2313` subjects with the
-tagged legacy stock. Issue `dd7234e` subsequently added
-`results/ef9c882/runs/base.graph.json`, a current-schema C&S graph whose
-inspected `LinearStateSpace` structure matches its explicit `cs_lss` family.
-The live guarded manifest therefore contains 37 clean sidecars: 36 surviving
-historical point-mass sidecars plus that one native C&S-LSS sidecar. Converted
-`ae15851` fixtures are excluded from this source-sidecar inventory so the
-builder and drift guard audit the same corpus.
+tagged legacy stock, so the live guarded manifest now contains the 36 surviving
+clean sidecars while this narrative preserves the original audit disposition.
+Issue `dd7234e` subsequently added `results/ef9c882/runs/base.graph.json`, a
+native current-schema C&S graph rather than an archived conversion input. The
+builder and drift guard exclude that explicit path from this historical corpus
+and separately verify that it remains tracked and current-schema.
 
 Every one of the 38 sidecars:
 
@@ -35,13 +34,6 @@ Every one of the 38 sidecars:
 
 Both facts were verified programmatically for all 38 files (not assumed) and
 are recorded per-file in the manifest.
-
-The later `ef9c882` sidecar intentionally differs from those historical
-invariants: it carries a top-level current graph schema and no legacy
-`metadata.version`. Its inspected node types include `LinearStateSpace`,
-`StateFeedbackSelector`, `Subgraph`, and additive `Sum` adapters, so the audit
-classifies it cleanly as native `cs_lss` rather than treating it as a legacy
-point-mass conversion candidate.
 
 ## Method
 
@@ -161,17 +153,15 @@ the CS-stochastic pair, `plant_process_force_noise`), `node_types`,
 and a `conversion_candidate_key` object
 (`retired_type`, `structural_predicate`, `metadata_version`,
 `audited_fixture_hash`) matching the composite key the issue spec requires.
-The current `ef9c882` entry is likewise hash-pinned and classified from its
-node types while retaining its native top-level schema fields in the recorded
-inspection data.
 
 `tests/test_graph_sidecar_audit_manifest.py` guards this manifest against
-drift: it fails on an empty manifest, a live `git ls-files` count that
-disagrees with the manifest's `audited_count`, any live sidecar path missing
+drift: it fails on an empty manifest, an in-scope `git ls-files` count that
+disagrees with the manifest's `audited_count`, any archived sidecar path missing
 from the manifest (or vice versa), any sha256 mismatch between the manifest
-and the live file, and any tracked sidecar not present in the manifest at all
-(the "unaudited new sidecar" case the issue spec's acceptance criteria
-require).
+and the live file, and any unexcluded tracked sidecar not present in the
+manifest at all (the "unaudited new sidecar" case the issue spec's acceptance
+criteria require). Explicit exclusions must remain tracked current-schema
+graphs, so they cannot silently become unaudited legacy inputs.
 
 ## Non-goals (explicitly out of scope for this audit)
 

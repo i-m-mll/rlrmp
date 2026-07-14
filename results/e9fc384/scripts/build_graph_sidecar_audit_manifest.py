@@ -27,6 +27,7 @@ MANIFEST_PATH = REPO_ROOT / "results" / "e9fc384" / "notes" / "graph_sidecar_aud
 
 SIDECAR_PATTERNS = ("results/**/model.graph.json", "results/**/*.graph.json")
 CONVERTED_FIXTURE_PREFIXES = ("results/ae15851/converted/",)
+NON_ARCHIVED_CURRENT_SCHEMA_SIDECARS = frozenset({"results/ef9c882/runs/base.graph.json"})
 EXPECTED_COUNT = 38
 MANIFEST_SCHEMA_VERSION = 1
 
@@ -50,7 +51,6 @@ CS_LSS_MARKER_TYPE = "LinearStateSpace"
 EXPECTED_FAMILY_OVERRIDES: dict[str, str] = {
     "results/30f2313/runs/cs_stochastic_gru__hidden_penalty/model.graph.json": "cs_lss",
     "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/model.graph.json": "cs_lss",
-    "results/ef9c882/runs/base.graph.json": "cs_lss",
 }
 DEFAULT_EXPECTED_FAMILY = "point_mass"
 
@@ -161,6 +161,7 @@ def build_manifest() -> dict[str, Any]:
         path
         for path in _git_ls_files(*SIDECAR_PATTERNS)
         if not path.startswith(CONVERTED_FIXTURE_PREFIXES)
+        and path not in NON_ARCHIVED_CURRENT_SCHEMA_SIDECARS
     ]
     files = [_audit_file(relpath) for relpath in live_paths]
 

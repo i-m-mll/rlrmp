@@ -8,7 +8,8 @@ so that fixture conversion cannot silently pick up a new, unaudited sidecar.
 This test is the drift guard: it fails on an empty audited set, a live count
 that disagrees with the manifest, a missing path/hash, a hash mismatch, a
 stale manifest entry with no matching live file, or a live sidecar that is
-not present in the manifest at all.
+not present in the manifest at all. Native current-schema sidecars are excluded
+explicitly and guarded separately so they cannot silently become legacy inputs.
 """
 
 from __future__ import annotations
@@ -28,9 +29,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "results" / "e9fc384" / "notes" / "graph_sidecar_audit_manifest.json"
 SIDECAR_PATTERNS = ("results/**/model.graph.json", "results/**/*.graph.json")
 CONVERTED_FIXTURE_PREFIXES = ("results/ae15851/converted/",)
+NON_ARCHIVED_CURRENT_SCHEMA_SIDECARS = frozenset({"results/ef9c882/runs/base.graph.json"})
 
 
-def _live_sidecar_paths() -> list[str]:
+def _tracked_sidecar_paths() -> list[str]:
     result = subprocess.run(
         ["git", "ls-files", *SIDECAR_PATTERNS],
         cwd=REPO_ROOT,
@@ -38,11 +40,16 @@ def _live_sidecar_paths() -> list[str]:
         capture_output=True,
         text=True,
     )
+    return sorted({line for line in result.stdout.splitlines() if line})
+
+
+def _audited_sidecar_paths() -> list[str]:
     return sorted(
         {
             line
-            for line in result.stdout.splitlines()
-            if line and not line.startswith(CONVERTED_FIXTURE_PREFIXES)
+            for line in _tracked_sidecar_paths()
+            if not line.startswith(CONVERTED_FIXTURE_PREFIXES)
+            and line not in NON_ARCHIVED_CURRENT_SCHEMA_SIDECARS
         }
     )
 
@@ -69,9 +76,20 @@ def test_manifest_schema_version_and_nonempty_file_set() -> None:
     assert manifest.get("audited_count") == len(files)
 
 
+def test_explicit_non_archived_sidecars_are_tracked_current_schema() -> None:
+    tracked_paths = set(_tracked_sidecar_paths())
+
+    for relpath in NON_ARCHIVED_CURRENT_SCHEMA_SIDECARS:
+        assert relpath in tracked_paths, relpath
+        with (REPO_ROOT / relpath).open(encoding="utf-8") as stream:
+            payload = json.load(stream)
+        assert payload.get("schema_version") is not None, relpath
+        assert payload.get("metadata", {}).get("version") != "rlrmp.feedbax_graph.v1", relpath
+
+
 def test_manifest_audited_count_matches_live_git_ls_files() -> None:
     manifest = _load_manifest()
-    live_paths = _live_sidecar_paths()
+    live_paths = _audited_sidecar_paths()
 
     assert manifest["audited_count"] == len(live_paths), (
         f"manifest audited_count={manifest['audited_count']} disagrees with live "
@@ -118,7 +136,7 @@ def test_manifest_hashes_match_live_file_content() -> None:
 def test_manifest_has_no_stale_entries() -> None:
     """Every manifest path must correspond to a currently tracked sidecar."""
     manifest = _load_manifest()
-    live_paths = set(_live_sidecar_paths())
+    live_paths = set(_audited_sidecar_paths())
 
     stale = sorted(entry["path"] for entry in manifest["files"] if entry["path"] not in live_paths)
 
@@ -126,10 +144,10 @@ def test_manifest_has_no_stale_entries() -> None:
 
 
 def test_no_unaudited_new_sidecars() -> None:
-    """Every live tracked sidecar must be present in the manifest."""
+    """Every in-scope archived sidecar must be present in the manifest."""
     manifest = _load_manifest()
     manifest_paths = {entry["path"] for entry in manifest["files"]}
-    live_paths = set(_live_sidecar_paths())
+    live_paths = set(_audited_sidecar_paths())
 
     unaudited = sorted(live_paths - manifest_paths)
 

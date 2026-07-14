@@ -5,9 +5,9 @@
     "results/**/*.graph.json"
   ],
   "expected_count": 38,
-  "audited_count": 37,
+  "audited_count": 36,
   "classification_summary": {
-    "clean": 37,
+    "clean": 36,
     "known_wrong": 0
   },
   "files": [
@@ -2385,78 +2385,6 @@
         "structural_predicate": "point_mass_filter_channel_family_present",
         "metadata_version": "rlrmp.feedbax_graph.v1",
         "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071"
-      }
-    },
-    {
-      "path": "results/ef9c882/runs/base.graph.json",
-      "sha256": "4997885515ce59cfeccb97fd97245d837fdd1fd4db2f44d8d701e5958d373148",
-      "metadata_version": null,
-      "top_level_keys": [
-        "additive_channel_adapters",
-        "derived_dimensions",
-        "input_bindings",
-        "input_ports",
-        "nodes",
-        "output_bindings",
-        "output_ports",
-        "parameter_constraints",
-        "schema_id",
-        "schema_version",
-        "subgraphs",
-        "wires"
-      ],
-      "has_top_level_schema_version": true,
-      "retired_component_ids": [
-        "command_input_additive",
-        "delayed_observation_additive",
-        "efferent",
-        "feedback",
-        "mechanics",
-        "net",
-        "sensory",
-        "sensory_feedback_additive"
-      ],
-      "node_types": {
-        "command_input_additive": "Sum",
-        "delayed_observation_additive": "Sum",
-        "efferent": "Channel",
-        "feedback": "StateFeedbackSelector",
-        "mechanics": "LinearStateSpace",
-        "net": "Subgraph",
-        "sensory": "Channel",
-        "sensory_feedback_additive": "Sum"
-      },
-      "structural_types": [
-        "Channel",
-        "LinearStateSpace",
-        "StateFeedbackSelector",
-        "Subgraph",
-        "Sum"
-      ],
-      "controller_kind": null,
-      "structural_family_actual": "cs_lss",
-      "structural_subfamily_actual": "cs_lss",
-      "expected_conversion_family": "cs_lss",
-      "classification": "clean",
-      "classification_reason": "Inspected structure matches the expected 'cs_lss' family.",
-      "structural_predicates_checked": {
-        "metadata_version_is_v1": false,
-        "no_top_level_schema_version": false,
-        "point_mass_filter_channel_family_present": false,
-        "linear_state_space_absent": false,
-        "controller_kind_recorded": false
-      },
-      "conversion_candidate_key": {
-        "retired_type": [
-          "Channel",
-          "LinearStateSpace",
-          "StateFeedbackSelector",
-          "Subgraph",
-          "Sum"
-        ],
-        "structural_predicate": "cs_lss_family_present",
-        "metadata_version": null,
-        "audited_fixture_hash": "4997885515ce59cfeccb97fd97245d837fdd1fd4db2f44d8d701e5958d373148"
       }
     }
   ]
