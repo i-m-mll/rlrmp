@@ -26,6 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = REPO_ROOT / "results" / "e9fc384" / "notes" / "graph_sidecar_audit_manifest.json"
 
 SIDECAR_PATTERNS = ("results/**/model.graph.json", "results/**/*.graph.json")
+CONVERTED_FIXTURE_PREFIXES = ("results/ae15851/converted/",)
 EXPECTED_COUNT = 38
 MANIFEST_SCHEMA_VERSION = 1
 
@@ -49,6 +50,7 @@ CS_LSS_MARKER_TYPE = "LinearStateSpace"
 EXPECTED_FAMILY_OVERRIDES: dict[str, str] = {
     "results/30f2313/runs/cs_stochastic_gru__hidden_penalty/model.graph.json": "cs_lss",
     "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/model.graph.json": "cs_lss",
+    "results/ef9c882/runs/base.graph.json": "cs_lss",
 }
 DEFAULT_EXPECTED_FAMILY = "point_mass"
 
@@ -155,7 +157,11 @@ def _audit_file(relpath: str) -> dict[str, Any]:
 
 
 def build_manifest() -> dict[str, Any]:
-    live_paths = _git_ls_files(*SIDECAR_PATTERNS)
+    live_paths = [
+        path
+        for path in _git_ls_files(*SIDECAR_PATTERNS)
+        if not path.startswith(CONVERTED_FIXTURE_PREFIXES)
+    ]
     files = [_audit_file(relpath) for relpath in live_paths]
 
     clean = [f for f in files if f["classification"] == "clean"]

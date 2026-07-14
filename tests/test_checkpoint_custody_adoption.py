@@ -90,6 +90,7 @@ def _cs_run_spec() -> dict[str, object]:
     return {
         "schema_version": "rlrmp.test",
         "issue": "799fcb9",
+        "n_train_batches": 4,
         "training_summary": {
             "training_mode": "standard",
             "n_train_batches": 4,

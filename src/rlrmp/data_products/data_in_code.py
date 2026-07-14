@@ -231,6 +231,11 @@ def _empirical_allowlist() -> dict[str, str]:
 
 
 _TRAINING_STRUCTURAL_ALLOWLIST = {
+    "src/rlrmp/runtime/training_run_specs.py::cs_supervised_optimizer_spec::spec_flow": (
+        "This builder translates governed C&S runtime configuration into Feedbax's typed optimizer "
+        "and learning-rate schedule contracts; it validates persisted intent rather than selecting "
+        "an experiment row."
+    ),
     "src/rlrmp/train/config_materialization.py::CS_REGULARIZED_NN_HIDDEN::hp_constant": (
         "The value fixes the width of the C&S regularized-network comparator, whose architecture "
         "requires an equal hidden width at every stage."

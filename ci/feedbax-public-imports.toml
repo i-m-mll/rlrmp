@@ -46,12 +46,18 @@ symbols = [
 
 [[canonical_homes]]
 module = "feedbax.persistence"
-symbols = ["IMMUTABLE_ARTIFACT_BLOB_STORAGE_BACKEND", "ImmutableArtifactBlobProvider"]
+symbols = [
+  "IMMUTABLE_ARTIFACT_BLOB_STORAGE_BACKEND",
+  "ImmutableArtifactBlobProvider",
+  "ImmutableArtifactBlobProviderSpec",
+  "open_immutable_artifact_blob_provider",
+]
 
 [[canonical_homes]]
 module = "feedbax.contracts"
 symbols = [
   "MaterializedMatrixRow",
+  "StagedCheckpointCustodySpec",
   "TrainingManifestMetadataProjection",
   "TrainingManifestMetadataProjectionRegistration",
 ]
@@ -398,6 +404,7 @@ symbols = [
   "CheckpointContinuationRequest",
   "CheckpointForkBarrierMapping",
   "CheckpointSegmentLineage",
+  "CheckpointTransactionManifest",
 ]
 
 [[canonical_homes]]
@@ -436,6 +443,10 @@ reason = "Issue 158b580 uses Feedbax's public facade for ASSEMBLE-through-REGIST
 [[canonical_homes]]
 module = "feedbax.orchestration.events"
 symbols = ["RunEventEmitter"]
+
+[[canonical_homes]]
+module = "feedbax.orchestration.conformance"
+symbols = ["RunConformanceCertificate"]
 
 [[canonical_homes]]
 module = "feedbax.orchestration.schedule_eval"
@@ -709,6 +720,8 @@ symbols = [
   "NativeExecutionProducerContext",
   "NativeTrainingDiagnosticsInput",
   "ScheduleContextDiagnostic",
+  "TRAINING_DIAGNOSTICS_SCHEMA_ID",
+  "TRAINING_DIAGNOSTICS_SCHEMA_VERSION",
 ]
 
 [[canonical_homes]]

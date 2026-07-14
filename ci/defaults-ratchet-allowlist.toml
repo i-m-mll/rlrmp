@@ -175,6 +175,14 @@ owner = "cc3a61f"
 note = "Recipe/report/training fallback remediation lane."
 
 [[default_fallback_sites]]
+path = "src/rlrmp/analysis/reports.py"
+key = "status"
+literal_repr = "'missing'"
+count = 1
+owner = "9c342ba"
+note = "Standard-certificate generalization uses an explicit display fallback for absent component status."
+
+[[default_fallback_sites]]
 path = "src/rlrmp/eval/recipes.py"
 key = "alignment_mode"
 literal_repr = "'reach_locked'"
@@ -200,6 +208,14 @@ note = "Recipe/report/training fallback remediation lane."
 
 [[default_fallback_sites]]
 path = "src/rlrmp/eval/recipes.py"
+key = "extlqg_physical_dim"
+literal_repr = "8"
+count = 1
+owner = "639e30f"
+note = "Native checkpoint-custody projection preserves the governed eight-dimensional C&S physical state."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/eval/recipes.py"
 key = "mode"
 literal_repr = "'precomputed'"
 count = 1
@@ -221,6 +237,14 @@ literal_repr = "8"
 count = 1
 owner = "cc3a61f"
 note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/eval/recipes.py"
+key = "n_rollout_trials"
+literal_repr = "8"
+count = 1
+owner = "639e30f"
+note = "Native checkpoint-custody projection preserves the governed eight-trial evaluation default."
 
 [[default_fallback_sites]]
 path = "src/rlrmp/eval/recipes.py"

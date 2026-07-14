@@ -41,6 +41,7 @@ from feedbax.contracts.worker import (
     PhaseTransitionSpec,
     ResumeCoordinateSpec,
     StateSlotSpec,
+    TrainingBatchProgressSpec,
     UpdateKernelSpec,
     UpdateStepSpec,
     derive_consistency_predicate,
@@ -426,6 +427,7 @@ def policy_adversary_method_contract() -> MethodContractSpec:
                 ),
             )
         ],
+        batch_progress=TrainingBatchProgressSpec(slot=COMPLETED_BATCHES),
         metadata={
             "phase_program_identity": "rlrmp.policy_adversary_supervised.chunked.v1",
             "checkpoint_barrier_policy": "after_each_policy_adversary_chunk",

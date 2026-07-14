@@ -369,7 +369,6 @@ def test_tracked_authored_matrix_sidecars_are_portable_and_hash_bound() -> None:
     ("issue", "expected_sha256"),
     [
         ("2cb6a58", "547efe4d07e86f941c307a8a95ada987666935742310e2faa19a504cfeb9a1f5"),
-        ("4eb51ee", "78108ca2286af701583e5c4eb87a92736820b5c9260129637722c61831a9e52f"),
     ],
 )
 def test_smoke_matrices_cold_emit_portable_sidecars_without_identity_drift(
@@ -413,6 +412,41 @@ def test_smoke_matrices_cold_emit_portable_sidecars_without_identity_drift(
     assert (
         sha256(resolve_authored_matrix_artifact(ref, repo_root=tmp_path)).hexdigest() == ref.sha256
     )
+
+
+def test_historical_4eb51ee_legacy_architecture_authoring_fails_closed(
+    tmp_path: Path,
+) -> None:
+    issue = "4eb51ee"
+    relative_root = Path("results") / issue / "runs"
+    source_root = REPO_ROOT / relative_root
+    temporary_root = tmp_path / relative_root
+    temporary_root.mkdir(parents=True)
+    for name in ("matrix.json", "base.intent.json"):
+        (temporary_root / name).write_bytes((source_root / name).read_bytes())
+    dependency_lock = tmp_path / "uv.lock"
+    dependency_lock.write_bytes((REPO_ROOT / "uv.lock").read_bytes())
+
+    completed = _run_emitter_cold(
+        str(temporary_root / "matrix.json"),
+        "--output",
+        str(temporary_root / "emitted.json"),
+        "--repo-root",
+        str(tmp_path),
+        "--custody-root",
+        str(tmp_path / "custody" / issue),
+        "--dependency-lock",
+        str(dependency_lock),
+        "--materializer-commit",
+        "a" * 40,
+        cwd=tmp_path,
+        tmp_path=tmp_path,
+    )
+
+    assert completed.returncode != 0
+    assert "controller_architecture" in completed.stderr
+    assert "time_constrained_free_gain" in completed.stderr
+    assert "Input should be 'gru'" in completed.stderr
 
 
 def test_migration_preserves_exact_pre_migration_inline_semantics(tmp_path: Path) -> None:

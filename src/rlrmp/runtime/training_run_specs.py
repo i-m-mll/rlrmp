@@ -1576,6 +1576,7 @@ def _distillation_contract(
             )
             for phase_name in phase_names
         ],
+        batch_progress=TrainingBatchProgressSpec(slot="completed_batches"),
         metadata={"teacher_is_payload_config_not_axis": True},
     )
     return MethodContractSpec(

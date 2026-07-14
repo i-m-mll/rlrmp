@@ -33,6 +33,7 @@ from feedbax.contracts.worker import (
     PhaseSpec,
     PhaseTransitionSpec,
     StateSlotSpec,
+    TrainingBatchProgressSpec,
     UpdateKernelSpec,
     UpdateStepSpec,
     derive_consistency_predicate,
@@ -44,7 +45,7 @@ from rlrmp.model.feedbax_graph import graph_spec_payload
 from rlrmp.model.trainable import staged_network_trainable_paths
 from rlrmp.runtime.jax_config import assert_jax_x64_disabled
 from rlrmp.runtime.training_run_specs import build_training_run_spec_scaffold
-from rlrmp.train.executor.slots import minimax_checkpoint_slot_specs
+from rlrmp.train.executor.slots import COMPLETED_BATCHES, minimax_checkpoint_slot_specs
 from rlrmp.train.training_configs import MinimaxConfig
 
 __all__ = [
@@ -366,8 +367,20 @@ def minimax_method_contract() -> MethodContractSpec:
             PhaseSpec(
                 name="warmup",
                 kind="warmup",
-                reads=["controller", "controller_optimizer", "rng", "objective"],
-                writes=["controller", "controller_optimizer", "rng", "controller_loss"],
+                reads=[
+                    "controller",
+                    "controller_optimizer",
+                    "rng",
+                    COMPLETED_BATCHES,
+                    "objective",
+                ],
+                writes=[
+                    "controller",
+                    "controller_optimizer",
+                    "rng",
+                    COMPLETED_BATCHES,
+                    "controller_loss",
+                ],
                 update_steps=["warmup_controller_descent"],
                 legal_next=["done", "adversarial"],
                 checkpoint_barrier="after_adversarial",
@@ -388,6 +401,7 @@ def minimax_method_contract() -> MethodContractSpec:
                     "adversary_optimizer",
                     "trial_batch",
                     "rng",
+                    COMPLETED_BATCHES,
                     "objective",
                 ],
                 writes=[
@@ -397,6 +411,7 @@ def minimax_method_contract() -> MethodContractSpec:
                     "adversary_optimizer",
                     "trial_batch",
                     "rng",
+                    COMPLETED_BATCHES,
                     "controller_loss",
                     "adversary_loss",
                 ],
@@ -470,8 +485,20 @@ def minimax_method_contract() -> MethodContractSpec:
                 name="warmup_controller_descent",
                 kind="gradient",
                 kernel=UpdateKernelSpec(kernel_ref="rlrmp.minimax.warmup_controller_descent"),
-                reads=["controller", "controller_optimizer", "rng", "objective"],
-                writes=["controller", "controller_optimizer", "rng", "controller_loss"],
+                reads=[
+                    "controller",
+                    "controller_optimizer",
+                    "rng",
+                    COMPLETED_BATCHES,
+                    "objective",
+                ],
+                writes=[
+                    "controller",
+                    "controller_optimizer",
+                    "rng",
+                    COMPLETED_BATCHES,
+                    "controller_loss",
+                ],
                 axes=["batch", "replicate"],
                 optimizer_binding="controller_optimizer_to_controller_warmup",
                 metadata={"direction": "minimize"},
@@ -515,8 +542,15 @@ def minimax_method_contract() -> MethodContractSpec:
                     "controller_optimizer",
                     "adversary_population",
                     "trial_batch",
+                    COMPLETED_BATCHES,
                 ],
-                writes=["controller", "controller_optimizer", "rng", "controller_loss"],
+                writes=[
+                    "controller",
+                    "controller_optimizer",
+                    "rng",
+                    COMPLETED_BATCHES,
+                    "controller_loss",
+                ],
                 axes=["batch", "replicate"],
                 optimizer_binding="controller_optimizer_to_controller_adversarial",
                 metadata={"direction": "minimize"},
@@ -560,6 +594,7 @@ def minimax_method_contract() -> MethodContractSpec:
                 slots=minimax_checkpoint_slot_specs(),
             ),
         ],
+        batch_progress=TrainingBatchProgressSpec(slot=COMPLETED_BATCHES),
         metadata={
             "phase_program_identity": "rlrmp.minimax.warmup_then_adversarial.v2",
             "checkpoint_barrier_policy": "shared_after_each_minimax_program_step",
@@ -590,6 +625,7 @@ def minimax_method_contract() -> MethodContractSpec:
             ),
             StateSlotSpec(name="trial_batch", role="environment", lifetime="per-outer-step-init"),
             StateSlotSpec(name="rng", role="prng"),
+            StateSlotSpec(name=COMPLETED_BATCHES, role="auxiliary"),
             StateSlotSpec(name="objective", role="objective"),
             StateSlotSpec(name="controller_loss", role="metric", required=False),
             StateSlotSpec(name="adversary_loss", role="metric", required=False),

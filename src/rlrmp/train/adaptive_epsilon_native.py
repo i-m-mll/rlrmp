@@ -48,6 +48,7 @@ from feedbax.contracts.worker import (
     PhaseTransitionSpec,
     ResumeCoordinateSpec,
     StateSlotSpec,
+    TrainingBatchProgressSpec,
     UpdateKernelSpec,
     UpdateStepSpec,
     derive_consistency_predicate,
@@ -561,6 +562,7 @@ def adaptive_epsilon_method_contract() -> MethodContractSpec:
                 ),
             )
         ],
+        batch_progress=TrainingBatchProgressSpec(slot=COMPLETED_BATCHES),
         metadata={
             "phase_program_identity": "rlrmp.adaptive_epsilon_curriculum.chunked.v1",
             "checkpoint_barrier_policy": "after_each_adaptive_epsilon_chunk",

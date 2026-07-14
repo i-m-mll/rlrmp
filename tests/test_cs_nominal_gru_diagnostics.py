@@ -65,6 +65,16 @@ def _args(**overrides) -> argparse.Namespace:
     return argparse.Namespace(**values)
 
 
+@pytest.fixture
+def isolated_feedbax_manifest_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    manifest_root = tmp_path / "feedbax-runs"
+    monkeypatch.setenv("FEEDBAX_RUNS_DIR", str(manifest_root))
+    return manifest_root
+
+
 class _ScalarLoss:
     def __init__(
         self, value: np.ndarray | None = None, children: dict[str, "_ScalarLoss"] | None = None
@@ -853,7 +863,10 @@ def test_resume_training_diagnostics_stitch_is_idempotent_for_checkpoint_sidecar
     assert np.all(stitched["history_learning_rate"][:, 1000:] == 3.0)
 
 
-def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path) -> None:
+def test_target_relative_h0_full_training_smoke_emits_diagnostics(
+    tmp_path: Path,
+    isolated_feedbax_manifest_root: Path,
+) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
     args = _args(
@@ -907,6 +920,7 @@ def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path
 def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    isolated_feedbax_manifest_root: Path,
 ) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -981,6 +995,7 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(
 
 def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
     tmp_path: Path,
+    isolated_feedbax_manifest_root: Path,
 ) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -1075,6 +1090,7 @@ def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
 def test_full_training_smoke_can_disable_diagnostics(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    isolated_feedbax_manifest_root: Path,
 ) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
