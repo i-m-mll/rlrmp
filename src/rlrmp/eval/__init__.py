@@ -21,6 +21,12 @@ from rlrmp.eval.checkpoint_selection import (
     load_validation_selected_checkpoint_model,
 )
 from rlrmp.eval.kinematics import compute_kinematics
+from rlrmp.eval.model_slots import (
+    ModelSlotProjection,
+    ModelSlotProjectionError,
+    ModelSlotProvenance,
+    project_training_model_slot,
+)
 from rlrmp.eval.pert import eval_at_pert0, eval_at_pert_scale
 from rlrmp.eval.recipes import (
     BROAD_EPSILON_EVALUATION_TYPE,
@@ -39,6 +45,9 @@ __all__ = [
     "DELAYED_REACH_BANK_EVALUATION_TYPE",
     "FEEDBACK_ABLATION_EVALUATION_TYPE",
     "N_REPLICATES",
+    "ModelSlotProjection",
+    "ModelSlotProjectionError",
+    "ModelSlotProvenance",
     "PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE",
     "ReplicateCheckpointSelection",
     "WORST_CASE_EPSILON_EVALUATION_TYPE",
@@ -49,6 +58,7 @@ __all__ = [
     "eval_at_pert_scale",
     "eval_ensemble_on_trials",
     "load_validation_selected_checkpoint_model",
+    "project_training_model_slot",
     "register_rlrmp_evaluation_recipes",
     "set_sisu",
 ]
