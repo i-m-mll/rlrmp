@@ -20,7 +20,7 @@ from feedbax.config import ExperimentRegistry
 from feedbax.contracts.manifest import load_manifest
 from feedbax.contracts.run_matrix import RowLowererIdentity, TrainingRowProvenance
 from feedbax.contracts.checkpoints import CheckpointTransactionManifest
-from feedbax.contracts.manifest import ParentRef, TrainingRunManifest
+from feedbax.contracts.manifest import ArtifactRef, ParentRef, TrainingRunManifest
 from feedbax.contracts.spec_storage import training_run_execution_hash
 from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY
 from feedbax.orchestration.bundle import (
@@ -34,9 +34,16 @@ from feedbax.orchestration.bundle import (
 )
 from feedbax.training import DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY
 from feedbax.training.diagnostics import (
+    TRAINING_DIAGNOSTICS_SCHEMA_ID,
+    TRAINING_DIAGNOSTICS_SCHEMA_VERSION,
     NativeExecutionProducerContext,
     NativeTrainingDiagnosticsInput,
     ScheduleContextDiagnostic,
+    TrainingDiagnostics,
+)
+from feedbax.persistence import (
+    ImmutableArtifactBlobProviderSpec,
+    open_immutable_artifact_blob_provider,
 )
 from feedbax.contracts.worker import ProgressCoordinate
 import feedbax.training.executor as executor_module
@@ -47,10 +54,7 @@ from rlrmp.train.orchestration_drivers import (
     _resume_checkpoint_root,
     _same_row_binding,
 )
-from rlrmp.train.orchestrated_post_run import (
-    map_registered_run_set,
-    rooted_manifest_ref_resolver,
-)
+from rlrmp.train.orchestrated_post_run import map_registered_run_set
 from rlrmp.train.orchestrated_row import (
     RowLaunchPacket,
     _batch_limit_probe,
@@ -824,8 +828,17 @@ def _mapped_run_set_fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, dict[
     run_set = tmp_path / "set"
     source = run_set / "collected" / "row-a"
     source.mkdir(parents=True)
-    for name in ("training-diagnostics.json", "training_summary.json"):
-        (source / name).write_text("{}\n", encoding="utf-8")
+    (source / "training_summary.json").write_text('{"reviewer_convenience": true}\n')
+    diagnostics = TrainingDiagnostics(
+        manifest_id="run-a",
+        run_id="run-a",
+        terminal_status="completed",
+        completed_batches=8,
+        segment_completed_batches=8,
+        cumulative_completed_batches=8,
+    )
+    diagnostics_path = source / "training-diagnostics.json"
+    diagnostics_raw = _write_json_model(diagnostics_path, diagnostics)
     execution_hash = training_run_execution_hash("1" * 64, [])
     checkpoint_root = tmp_path / "checkpoint-custody"
     root_path = checkpoint_root / "transactions" / "tx-root" / "manifest.json"
@@ -847,13 +860,29 @@ def _mapped_run_set_fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, dict[
         ),
     )
     manifest = TrainingRunManifest(
-        id="training-run:row-a",
+        id="run-a",
         run_set_id="set",
         job_id="run-a",
         status="completed",
         resolved_semantics_root_hash="1" * 64,
         execution_hash=execution_hash,
+        completed_batches=8,
         metadata={"training_row_provenance": {"row_id": "row-a", "planned_run_id": "run-a"}},
+        artifacts=[
+            ArtifactRef(
+                role="training_diagnostics",
+                logical_name="training-diagnostics.json",
+                artifact_id=(f"artifact://sha256/{hashlib.sha256(diagnostics_raw).hexdigest()}"),
+                sha256=hashlib.sha256(diagnostics_raw).hexdigest(),
+                media_type="application/json",
+                size_bytes=len(diagnostics_raw),
+                uri=str(diagnostics_path),
+                metadata={
+                    "schema_id": TRAINING_DIAGNOSTICS_SCHEMA_ID,
+                    "schema_version": TRAINING_DIAGNOSTICS_SCHEMA_VERSION,
+                },
+            )
+        ],
         checkpoint_custody=[
             ParentRef(
                 kind="TrainingCheckpointTransactionManifest",
@@ -864,8 +893,8 @@ def _mapped_run_set_fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, dict[
             ),
         ],
     )
-    durable_manifest = tmp_path / "durable-provider" / "training-run-row-a.json"
-    manifest_raw = _write_json_model(durable_manifest, manifest)
+    durable_manifest = tmp_path / "source-manifests" / "training-run-row-a.json"
+    _write_json_model(durable_manifest, manifest)
     # The collected file is the orchestrator's existing copy. The mapper must
     # not create another TrainingRunManifest under the mapped artifact tree.
     (source / "manifest.json").hardlink_to(durable_manifest)
@@ -900,24 +929,7 @@ def _mapped_run_set_fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, dict[
         ),
         encoding="utf-8",
     )
-    manifest_ref = {
-        "kind": "TrainingRunManifest",
-        "id": manifest.id,
-        "role": "training_run",
-        "uri": "durable-manifest://training-run-row-a.json",
-        "metadata": {
-            "manifest_sha256": hashlib.sha256(manifest_raw).hexdigest(),
-            "size_bytes": len(manifest_raw),
-            "run_set_id": "set",
-            "row_id": "row-a",
-            "manifest_status": "completed",
-            "registration_status": "completed",
-            "conformance_overall": "pass",
-            "certificate_sha256": registration["certificate_sha256"],
-            "planned_run_id": "run-a",
-        },
-    }
-    return run_set, durable_manifest, {"row-a": manifest_ref}
+    return run_set, durable_manifest, {"row-a": {}}
 
 
 def _add_second_mapped_row(
@@ -928,31 +940,73 @@ def _add_second_mapped_row(
     """Extend the mapped-run fixture with a second valid row."""
     source = run_set / "collected" / "row-b"
     source.mkdir(parents=True)
-    for name in ("training-diagnostics.json", "training_summary.json"):
-        shutil.copy2(run_set / "collected" / "row-a" / name, source / name)
+    shutil.copy2(run_set / "collected" / "row-a" / "training_summary.json", source)
+    diagnostics = TrainingDiagnostics(
+        manifest_id="run-b",
+        run_id="run-b",
+        terminal_status="completed",
+        completed_batches=8,
+        segment_completed_batches=8,
+        cumulative_completed_batches=8,
+    )
+    diagnostics_path = source / "training-diagnostics.json"
+    diagnostics_raw = _write_json_model(diagnostics_path, diagnostics)
+    checkpoint_root = run_set.parent / "checkpoint-custody-row-b"
+    root_path = checkpoint_root / "transactions" / "tx-root-b" / "manifest.json"
+    terminal_path = checkpoint_root / "transactions" / "tx-terminal-b" / "manifest.json"
+    root_raw = _write_json_model(
+        root_path,
+        _checkpoint_transaction("tx-root-b", run_id="run-b", start_batch=0, batch_count=5),
+    )
+    terminal_raw = _write_json_model(
+        terminal_path,
+        _checkpoint_transaction(
+            "tx-terminal-b",
+            run_id="run-b",
+            start_batch=5,
+            batch_count=3,
+            parent_transaction_id="tx-root-b",
+            parent_manifest_uri=str(root_path),
+            parent_manifest_sha256=hashlib.sha256(root_raw).hexdigest(),
+        ),
+    )
     manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes()).model_copy(
         update={
-            "id": "training-run:row-b",
-            "metadata": {"training_row_provenance": {"row_id": "row-b", "planned_run_id": "run-a"}},
+            "id": "run-b",
+            "job_id": "run-b",
+            "metadata": {"training_row_provenance": {"row_id": "row-b", "planned_run_id": "run-b"}},
+            "artifacts": [
+                ArtifactRef(
+                    role="training_diagnostics",
+                    logical_name="training-diagnostics.json",
+                    artifact_id=(
+                        f"artifact://sha256/{hashlib.sha256(diagnostics_raw).hexdigest()}"
+                    ),
+                    sha256=hashlib.sha256(diagnostics_raw).hexdigest(),
+                    media_type="application/json",
+                    size_bytes=len(diagnostics_raw),
+                    uri=str(diagnostics_path),
+                    metadata={
+                        "schema_id": TRAINING_DIAGNOSTICS_SCHEMA_ID,
+                        "schema_version": TRAINING_DIAGNOSTICS_SCHEMA_VERSION,
+                    },
+                )
+            ],
+            "checkpoint_custody": [
+                ParentRef(
+                    kind="TrainingCheckpointTransactionManifest",
+                    id="tx-terminal-b",
+                    role="training_checkpoint_custody",
+                    uri=str(terminal_path),
+                    metadata={"manifest_sha256": hashlib.sha256(terminal_raw).hexdigest()},
+                )
+            ],
         }
     )
     durable_b = durable_manifest.with_name("training-run-row-b.json")
-    manifest_raw = _write_json_model(durable_b, manifest)
+    _write_json_model(durable_b, manifest)
     (source / "manifest.json").hardlink_to(durable_b)
-    row_a_metadata = manifest_refs["row-a"]["metadata"]
-    assert isinstance(row_a_metadata, dict)
-    manifest_refs["row-b"] = {
-        "kind": "TrainingRunManifest",
-        "id": manifest.id,
-        "role": "training_run",
-        "uri": "durable-manifest://training-run-row-b.json",
-        "metadata": {
-            **row_a_metadata,
-            "manifest_sha256": hashlib.sha256(manifest_raw).hexdigest(),
-            "size_bytes": len(manifest_raw),
-            "row_id": "row-b",
-        },
-    }
+    manifest_refs["row-b"] = {}
     bundle_path = run_set / "bundle.json"
     bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
     bundle["rows"].append(
@@ -966,29 +1020,33 @@ def _add_second_mapped_row(
 
 def test_completed_registration_maps_idempotently(tmp_path: Path) -> None:
     run_set, durable_manifest, manifest_refs = _mapped_run_set_fixture(tmp_path)
-    resolvers = {"durable-manifest": rooted_manifest_ref_resolver(tmp_path / "durable-provider")}
+    provider_root = tmp_path / "immutable-provider"
     first = map_registered_run_set(
         run_set,
         repo_root=tmp_path,
         issue="158b580",
         run_prefix="parity",
-        training_manifest_refs=manifest_refs,
-        manifest_ref_resolvers=resolvers,
+        immutable_artifact_root=provider_root,
     )
+    original_manifest_raw = durable_manifest.read_bytes()
+    original_diagnostics_raw = (run_set / "collected/row-a/training-diagnostics.json").read_bytes()
     before = first[0].read_bytes()
     second = map_registered_run_set(
         run_set,
         repo_root=tmp_path,
         issue="158b580",
         run_prefix="parity",
-        training_manifest_refs=manifest_refs,
-        manifest_ref_resolvers=resolvers,
+        immutable_artifact_root=provider_root,
     )
     assert second == first
     assert first[0].read_bytes() == before
     recipe = json.loads(first[0].read_text(encoding="utf-8"))
-    assert recipe["schema_version"] == "rlrmp.spec.orchestrated_post_run.v2"
-    assert recipe["training_manifest_ref"] == manifest_refs["row-a"]
+    assert recipe["schema_version"] == "rlrmp.spec.orchestrated_post_run.v3"
+    provider_spec = ImmutableArtifactBlobProviderSpec.model_validate(
+        recipe["immutable_artifact_blob_provider_spec"]
+    )
+    assert str(provider_root) not in json.dumps(recipe)
+    provider = open_immutable_artifact_blob_provider(provider_spec, explicit_root=provider_root)
     assert [ref["transaction_id"] for ref in recipe["checkpoint_lineage_refs"]] == [
         "tx-root",
         "tx-terminal",
@@ -996,7 +1054,12 @@ def test_completed_registration_maps_idempotently(tmp_path: Path) -> None:
     assert all(
         ref["uri"].startswith("artifact://sha256/") for ref in recipe["checkpoint_lineage_refs"]
     )
-    assert "manifest.json" not in recipe["source_paths"]
+    assert "source_paths" not in recipe
+    assert recipe["reviewer_convenience_paths"] == {
+        "training_summary": "_artifacts/158b580/runs/parity__row-a/training_summary.json"
+    }
+    assert not (first[0].parent / "training-diagnostics.json").exists()
+    ArtifactRef.model_validate(recipe["training_diagnostics_artifact_ref"])
     mapped_root = first[0].parent
     assert not any(
         path.read_bytes() == durable_manifest.read_bytes()
@@ -1007,7 +1070,11 @@ def test_completed_registration_maps_idempotently(tmp_path: Path) -> None:
     # A fresh reviewer needs only the packet's declared custody root/provider.
     shutil.rmtree(run_set)
     published_manifest_ref = recipe["training_manifest_ref"]
-    resolved_manifest = resolvers["durable-manifest"](published_manifest_ref)
+    resolved_manifest = provider.get_bytes(
+        published_manifest_ref["uri"],
+        size_bytes=published_manifest_ref["metadata"]["size_bytes"],
+    )
+    assert resolved_manifest == original_manifest_raw
     assert (
         hashlib.sha256(resolved_manifest).hexdigest()
         == published_manifest_ref["metadata"]["manifest_sha256"]
@@ -1015,11 +1082,27 @@ def test_completed_registration_maps_idempotently(tmp_path: Path) -> None:
     resolved_model = TrainingRunManifest.model_validate_json(resolved_manifest)
     assert resolved_model.id == published_manifest_ref["id"]
     assert resolved_model.status == published_manifest_ref["metadata"]["manifest_status"]
-    evidence_root = tmp_path / recipe["evidence_custody_root"]
+    diagnostics_ref = ArtifactRef.model_validate(recipe["training_diagnostics_artifact_ref"])
+    resolved_diagnostics = provider.get_bytes(diagnostics_ref)
+    assert resolved_diagnostics == original_diagnostics_raw
+    typed_diagnostics = TrainingDiagnostics.model_validate_json(resolved_diagnostics)
+    assert typed_diagnostics.manifest_id == resolved_model.id
+    assert typed_diagnostics.run_id == resolved_model.job_id
+    original_diagnostics_ref = resolved_model.artifacts[0]
+    assert diagnostics_ref.artifact_id == original_diagnostics_ref.artifact_id
+    assert diagnostics_ref.role == original_diagnostics_ref.role
+    assert diagnostics_ref.logical_name == original_diagnostics_ref.logical_name
+    assert diagnostics_ref.sha256 == original_diagnostics_ref.sha256
+    assert diagnostics_ref.size_bytes == original_diagnostics_ref.size_bytes
+    assert diagnostics_ref.media_type == original_diagnostics_ref.media_type
+    assert diagnostics_ref.metadata["schema_id"] == original_diagnostics_ref.metadata["schema_id"]
+    assert (
+        diagnostics_ref.metadata["schema_version"]
+        == original_diagnostics_ref.metadata["schema_version"]
+    )
     for key in ("registration_artifact_ref", "conformance_artifact_ref"):
-        ref = recipe[key]
-        materialized = evidence_root / ref["metadata"]["relative_path"]
-        assert hashlib.sha256(materialized.read_bytes()).hexdigest() == ref["sha256"]
+        ref = ArtifactRef.model_validate(recipe[key])
+        assert hashlib.sha256(provider.get_bytes(ref)).hexdigest() == ref.sha256
     # Reconstruct from the terminal ref by following the stored manifests'
     # actual parent declarations, rather than trusting mapper list order.
     refs_by_id = {ref["transaction_id"]: ref for ref in recipe["checkpoint_lineage_refs"]}
@@ -1027,8 +1110,7 @@ def test_completed_registration_maps_idempotently(tmp_path: Path) -> None:
     reversed_lineage: list[dict[str, object]] = []
     while True:
         ref = refs_by_id[current_id]
-        materialized = evidence_root / ref["metadata"]["relative_path"]
-        raw = materialized.read_bytes()
+        raw = provider.get_bytes(ref["uri"], size_bytes=ref["size_bytes"])
         assert hashlib.sha256(raw).hexdigest() == ref["sha256"]
         transaction = CheckpointTransactionManifest.model_validate_json(raw)
         assert transaction.transaction_id == current_id
@@ -1052,6 +1134,9 @@ def test_completed_registration_maps_idempotently(tmp_path: Path) -> None:
     assert lineage[0]["completed"] == lineage[0]["start"] + lineage[0]["count"]
     assert lineage[1]["start"] == lineage[0]["start"] + lineage[0]["count"]
     assert lineage[1]["completed"] == lineage[1]["start"] + lineage[1]["count"]
+    provider_objects = list((provider_root / "artifacts/sha256").glob("*/*"))
+    assert len([path for path in provider_objects if path.is_file()]) == 6
+    assert not any("slot" in path.name for path in provider_objects)
 
 
 def test_completed_registration_stages_all_rows_before_publication(
@@ -1059,7 +1144,7 @@ def test_completed_registration_stages_all_rows_before_publication(
 ) -> None:
     run_set, durable_manifest, manifest_refs = _mapped_run_set_fixture(tmp_path)
     _add_second_mapped_row(run_set, durable_manifest, manifest_refs)
-    resolvers = {"durable-manifest": rooted_manifest_ref_resolver(tmp_path / "durable-provider")}
+    provider_root = tmp_path / "immutable-provider"
     original_store = post_run_module._store_checkpoint_lineage
     calls = 0
 
@@ -1077,8 +1162,7 @@ def test_completed_registration_stages_all_rows_before_publication(
             repo_root=tmp_path,
             issue="158b580",
             run_prefix="parity",
-            training_manifest_refs=manifest_refs,
-            manifest_ref_resolvers=resolvers,
+            immutable_artifact_root=provider_root,
         )
 
     assert not (tmp_path / "_artifacts/158b580/runs/parity__row-a").exists()
@@ -1091,14 +1175,13 @@ def test_completed_registration_publication_rollback_preserves_existing_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run_set, durable_manifest, manifest_refs = _mapped_run_set_fixture(tmp_path)
-    resolvers = {"durable-manifest": rooted_manifest_ref_resolver(tmp_path / "durable-provider")}
+    provider_root = tmp_path / "immutable-provider"
     (existing_recipe,) = map_registered_run_set(
         run_set,
         repo_root=tmp_path,
         issue="158b580",
         run_prefix="parity",
-        training_manifest_refs=manifest_refs,
-        manifest_ref_resolvers=resolvers,
+        immutable_artifact_root=provider_root,
     )
     existing_row = existing_recipe.parent
     before = {
@@ -1124,8 +1207,7 @@ def test_completed_registration_publication_rollback_preserves_existing_rows(
             repo_root=tmp_path,
             issue="158b580",
             run_prefix="parity",
-            training_manifest_refs=manifest_refs,
-            manifest_ref_resolvers=resolvers,
+            immutable_artifact_root=provider_root,
         )
 
     assert {
@@ -1138,11 +1220,8 @@ def test_completed_registration_publication_rollback_preserves_existing_rows(
 
 
 def test_completed_registration_mapping_fails_closed_on_evidence_drift(tmp_path: Path) -> None:
-    run_set, _durable_manifest, manifest_refs = _mapped_run_set_fixture(tmp_path)
-    resolvers = {"durable-manifest": rooted_manifest_ref_resolver(tmp_path / "durable-provider")}
-
-    with pytest.raises(ValueError, match="resolver-backed immutable manifest ref"):
-        map_registered_run_set(run_set, repo_root=tmp_path, issue="158b580", run_prefix="parity")
+    run_set, _durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    provider_root = tmp_path / "immutable-provider"
 
     conformance = run_set / "conformance.json"
     conformance.write_bytes(conformance.read_bytes() + b" ")
@@ -1152,9 +1231,276 @@ def test_completed_registration_mapping_fails_closed_on_evidence_drift(tmp_path:
             repo_root=tmp_path,
             issue="158b580",
             run_prefix="parity",
-            training_manifest_refs=manifest_refs,
-            manifest_ref_resolvers=resolvers,
+            immutable_artifact_root=provider_root,
         )
+
+
+@pytest.mark.parametrize("artifact_count", [0, 2])
+def test_completed_registration_requires_one_diagnostics_artifact(
+    tmp_path: Path,
+    artifact_count: int,
+) -> None:
+    run_set, durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes())
+    diagnostics_ref = manifest.artifacts[0]
+    _write_json_model(
+        durable_manifest,
+        manifest.model_copy(update={"artifacts": [diagnostics_ref] * artifact_count}),
+    )
+    with pytest.raises(ValueError, match="exactly one training_diagnostics"):
+        map_registered_run_set(
+            run_set,
+            repo_root=tmp_path,
+            issue="158b580",
+            run_prefix="parity",
+            immutable_artifact_root=tmp_path / "immutable-provider",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("sha256", "0" * 64, "sha256 mismatch"),
+        ("size_bytes", 1, "size mismatch"),
+        ("media_type", "text/plain", "media_type"),
+    ],
+)
+def test_completed_registration_rejects_diagnostics_artifact_contract_drift(
+    tmp_path: Path,
+    field: str,
+    value: object,
+    match: str,
+) -> None:
+    run_set, durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes())
+    diagnostics_ref = manifest.artifacts[0].model_copy(update={field: value})
+    _write_json_model(
+        durable_manifest,
+        manifest.model_copy(update={"artifacts": [diagnostics_ref]}),
+    )
+    with pytest.raises(ValueError, match=match):
+        map_registered_run_set(
+            run_set,
+            repo_root=tmp_path,
+            issue="158b580",
+            run_prefix="parity",
+            immutable_artifact_root=tmp_path / "immutable-provider",
+        )
+
+
+def test_completed_registration_rejects_diagnostics_schema_drift(tmp_path: Path) -> None:
+    run_set, durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes())
+    metadata = {**manifest.artifacts[0].metadata, "schema_version": "legacy.v0"}
+    diagnostics_ref = manifest.artifacts[0].model_copy(update={"metadata": metadata})
+    _write_json_model(
+        durable_manifest,
+        manifest.model_copy(update={"artifacts": [diagnostics_ref]}),
+    )
+    with pytest.raises(ValueError, match="schema_version"):
+        map_registered_run_set(
+            run_set,
+            repo_root=tmp_path,
+            issue="158b580",
+            run_prefix="parity",
+            immutable_artifact_root=tmp_path / "immutable-provider",
+        )
+
+
+def test_completed_registration_rejects_noncanonical_diagnostics_artifact_id(
+    tmp_path: Path,
+) -> None:
+    run_set, durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes())
+    diagnostics_ref = manifest.artifacts[0].model_copy(
+        update={"artifact_id": "training-diagnostics:legacy-run-a"}
+    )
+    _write_json_model(
+        durable_manifest,
+        manifest.model_copy(update={"artifacts": [diagnostics_ref]}),
+    )
+    with pytest.raises(ValueError, match="artifact_id is not canonical"):
+        map_registered_run_set(
+            run_set,
+            repo_root=tmp_path,
+            issue="158b580",
+            run_prefix="parity",
+            immutable_artifact_root=tmp_path / "immutable-provider",
+        )
+
+
+def test_completed_registration_rejects_relative_diagnostics_source_before_publication(
+    tmp_path: Path,
+) -> None:
+    run_set, durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes())
+    diagnostics_ref = manifest.artifacts[0].model_copy(
+        update={"uri": "collected/row-a/training-diagnostics.json"}
+    )
+    _write_json_model(
+        durable_manifest,
+        manifest.model_copy(update={"artifacts": [diagnostics_ref]}),
+    )
+    provider_root = tmp_path / "immutable-provider"
+    with pytest.raises(ValueError, match="must name an absolute local path"):
+        map_registered_run_set(
+            run_set,
+            repo_root=tmp_path,
+            issue="158b580",
+            run_prefix="parity",
+            immutable_artifact_root=provider_root,
+        )
+    assert not (tmp_path / "_artifacts/158b580/runs/parity__row-a").exists()
+    assert not provider_root.exists()
+
+
+@pytest.mark.parametrize(
+    ("updates", "match"),
+    [
+        ({"manifest_id": "wrong"}, "parent/run identity"),
+        ({"run_id": "wrong"}, "parent/run identity"),
+        ({"terminal_status": "cancelled"}, "terminal status"),
+        (
+            {
+                "completed_batches": 7,
+                "segment_completed_batches": 7,
+                "cumulative_completed_batches": 7,
+            },
+            "completed batch count",
+        ),
+    ],
+)
+def test_completed_registration_rejects_typed_diagnostics_binding_drift(
+    tmp_path: Path,
+    updates: dict[str, object],
+    match: str,
+) -> None:
+    run_set, durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes())
+    diagnostics_path = Path(manifest.artifacts[0].uri or "")
+    diagnostics = TrainingDiagnostics.model_validate_json(diagnostics_path.read_bytes())
+    raw = _write_json_model(diagnostics_path, diagnostics.model_copy(update=updates))
+    digest = hashlib.sha256(raw).hexdigest()
+    diagnostics_ref = manifest.artifacts[0].model_copy(
+        update={
+            "artifact_id": f"artifact://sha256/{digest}",
+            "sha256": digest,
+            "size_bytes": len(raw),
+        }
+    )
+    _write_json_model(
+        durable_manifest,
+        manifest.model_copy(update={"artifacts": [diagnostics_ref]}),
+    )
+    with pytest.raises(ValueError, match=match):
+        map_registered_run_set(
+            run_set,
+            repo_root=tmp_path,
+            issue="158b580",
+            run_prefix="parity",
+            immutable_artifact_root=tmp_path / "immutable-provider",
+        )
+
+
+def test_completed_registration_rejects_collected_diagnostics_drift(tmp_path: Path) -> None:
+    run_set, durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes())
+    collected = run_set / "collected/row-a/training-diagnostics.json"
+    authoritative = tmp_path / "authoritative/training-diagnostics.json"
+    authoritative.parent.mkdir()
+    shutil.copy2(collected, authoritative)
+    diagnostics_ref = manifest.artifacts[0].model_copy(update={"uri": str(authoritative)})
+    _write_json_model(
+        durable_manifest,
+        manifest.model_copy(update={"artifacts": [diagnostics_ref]}),
+    )
+    collected.write_bytes(collected.read_bytes() + b" ")
+    with pytest.raises(ValueError, match="differ from authoritative"):
+        map_registered_run_set(
+            run_set,
+            repo_root=tmp_path,
+            issue="158b580",
+            run_prefix="parity",
+            immutable_artifact_root=tmp_path / "immutable-provider",
+        )
+
+
+def test_completed_registration_rejects_exact_parent_identity_drift(tmp_path: Path) -> None:
+    run_set, durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes())
+    _write_json_model(durable_manifest, manifest.model_copy(update={"id": "wrong-parent"}))
+    with pytest.raises(ValueError, match="planned_run_id mismatch"):
+        map_registered_run_set(
+            run_set,
+            repo_root=tmp_path,
+            issue="158b580",
+            run_prefix="parity",
+            immutable_artifact_root=tmp_path / "immutable-provider",
+        )
+
+
+def test_completed_registration_rejects_cancelled_training_manifest(tmp_path: Path) -> None:
+    run_set, durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes())
+    _write_json_model(durable_manifest, manifest.model_copy(update={"status": "cancelled"}))
+    with pytest.raises(ValueError, match="TrainingRunManifest is not completed"):
+        map_registered_run_set(
+            run_set,
+            repo_root=tmp_path,
+            issue="158b580",
+            run_prefix="parity",
+            immutable_artifact_root=tmp_path / "immutable-provider",
+        )
+
+
+def test_completed_registration_accepts_completed_stopped_manifest(tmp_path: Path) -> None:
+    run_set, durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes())
+    _write_json_model(
+        durable_manifest,
+        manifest.model_copy(
+            update={
+                "stopped": True,
+                "stop_reason": "requested",
+                "completed_at": manifest.created_at,
+            }
+        ),
+    )
+    (recipe_path,) = map_registered_run_set(
+        run_set,
+        repo_root=tmp_path,
+        issue="158b580",
+        run_prefix="parity",
+        immutable_artifact_root=tmp_path / "immutable-provider",
+    )
+    recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+    assert recipe["training_manifest_ref"]["metadata"]["manifest_status"] == "completed"
+
+
+def test_completed_registration_reads_collected_manifest_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_set, _durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest_path = run_set / "collected/row-a/manifest.json"
+    original_read_bytes = Path.read_bytes
+    read_count = 0
+
+    def count_manifest_read(path: Path) -> bytes:
+        nonlocal read_count
+        if path == manifest_path:
+            read_count += 1
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", count_manifest_read)
+    map_registered_run_set(
+        run_set,
+        repo_root=tmp_path,
+        issue="158b580",
+        run_prefix="parity",
+        immutable_artifact_root=tmp_path / "immutable-provider",
+    )
+    assert read_count == 1
 
 
 def test_completed_registration_cli_requires_and_consumes_manifest_provider(
@@ -1179,16 +1525,16 @@ def test_completed_registration_cli_requires_and_consumes_manifest_provider(
         module.main(base_args)
     assert not (tmp_path / "_artifacts").exists()
 
-    refs_path = tmp_path / "manifest-refs.json"
-    refs_path.write_text(json.dumps(manifest_refs), encoding="utf-8")
+    provider_spec_path = tmp_path / "provider-spec.json"
+    provider_spec_path.write_text(ImmutableArtifactBlobProviderSpec().model_dump_json())
     assert (
         module.main(
             [
                 *base_args,
-                "--training-manifest-refs",
-                str(refs_path),
-                "--manifest-provider",
-                f"durable-manifest={tmp_path / 'durable-provider'}",
+                "--immutable-artifact-root",
+                str(tmp_path / "immutable-provider"),
+                "--immutable-artifact-provider-spec",
+                str(provider_spec_path),
             ]
         )
         == 0
@@ -1198,34 +1544,36 @@ def test_completed_registration_cli_requires_and_consumes_manifest_provider(
 
 def test_completed_registration_mapping_rejects_corrupt_existing_cas(tmp_path: Path) -> None:
     run_set, _durable_manifest, manifest_refs = _mapped_run_set_fixture(tmp_path)
-    resolvers = {"durable-manifest": rooted_manifest_ref_resolver(tmp_path / "durable-provider")}
+    provider_root = tmp_path / "immutable-provider"
     (recipe_path,) = map_registered_run_set(
         run_set,
         repo_root=tmp_path,
         issue="158b580",
         run_prefix="parity",
-        training_manifest_refs=manifest_refs,
-        manifest_ref_resolvers=resolvers,
+        immutable_artifact_root=provider_root,
     )
     recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
-    evidence_root = tmp_path / recipe["evidence_custody_root"]
     registration_ref = recipe["registration_artifact_ref"]
-    materialized = evidence_root / registration_ref["metadata"]["relative_path"]
+    materialized = (
+        provider_root
+        / "artifacts/sha256"
+        / registration_ref["sha256"][:2]
+        / registration_ref["sha256"]
+    )
     materialized.write_bytes(b"corrupt")
-    with pytest.raises(ValueError, match="post-write verification"):
+    with pytest.raises(ValueError, match="artifact"):
         map_registered_run_set(
             run_set,
             repo_root=tmp_path,
             issue="158b580",
             run_prefix="parity",
-            training_manifest_refs=manifest_refs,
-            manifest_ref_resolvers=resolvers,
+            immutable_artifact_root=provider_root,
         )
 
 
 def test_completed_registration_mapping_rejects_checkpoint_tampering(tmp_path: Path) -> None:
     run_set, _durable_manifest, manifest_refs = _mapped_run_set_fixture(tmp_path)
-    resolvers = {"durable-manifest": rooted_manifest_ref_resolver(tmp_path / "durable-provider")}
+    provider_root = tmp_path / "immutable-provider"
     terminal = tmp_path / "checkpoint-custody/transactions/tx-terminal/manifest.json"
     terminal.write_bytes(terminal.read_bytes() + b" ")
     with pytest.raises(ValueError, match="manifest hash mismatch"):
@@ -1234,14 +1582,10 @@ def test_completed_registration_mapping_rejects_checkpoint_tampering(tmp_path: P
             repo_root=tmp_path,
             issue="158b580",
             run_prefix="parity",
-            training_manifest_refs=manifest_refs,
-            manifest_ref_resolvers=resolvers,
+            immutable_artifact_root=provider_root,
         )
 
     run_set, _durable_manifest, manifest_refs = _mapped_run_set_fixture(tmp_path / "missing")
-    missing_resolvers = {
-        "durable-manifest": rooted_manifest_ref_resolver(tmp_path / "missing/durable-provider")
-    }
     (tmp_path / "missing/checkpoint-custody/transactions/tx-root/manifest.json").unlink()
     with pytest.raises(ValueError, match="not materialized"):
         map_registered_run_set(
@@ -1249,14 +1593,38 @@ def test_completed_registration_mapping_rejects_checkpoint_tampering(tmp_path: P
             repo_root=tmp_path / "missing",
             issue="158b580",
             run_prefix="parity",
-            training_manifest_refs=manifest_refs,
-            manifest_ref_resolvers=missing_resolvers,
+            immutable_artifact_root=tmp_path / "missing/immutable-provider",
         )
+
+
+def test_completed_registration_rejects_relative_checkpoint_ref_before_publication(
+    tmp_path: Path,
+) -> None:
+    run_set, durable_manifest, _manifest_refs = _mapped_run_set_fixture(tmp_path)
+    manifest = TrainingRunManifest.model_validate_json(durable_manifest.read_bytes())
+    checkpoint_ref = manifest.checkpoint_custody[0].model_copy(
+        update={"uri": "transactions/tx-terminal/manifest.json"}
+    )
+    _write_json_model(
+        durable_manifest,
+        manifest.model_copy(update={"checkpoint_custody": [checkpoint_ref]}),
+    )
+    provider_root = tmp_path / "immutable-provider"
+    with pytest.raises(ValueError, match="must name an absolute local path"):
+        map_registered_run_set(
+            run_set,
+            repo_root=tmp_path,
+            issue="158b580",
+            run_prefix="parity",
+            immutable_artifact_root=provider_root,
+        )
+    assert not (tmp_path / "_artifacts/158b580/runs/parity__row-a").exists()
+    assert not provider_root.exists()
 
 
 def test_completed_registration_mapping_rejects_checkpoint_cycle(tmp_path: Path) -> None:
     run_set, durable_manifest, manifest_refs = _mapped_run_set_fixture(tmp_path)
-    resolvers = {"durable-manifest": rooted_manifest_ref_resolver(tmp_path / "durable-provider")}
+    provider_root = tmp_path / "immutable-provider"
     checkpoint_root = tmp_path / "checkpoint-custody/transactions"
     root_path = checkpoint_root / "tx-root/manifest.json"
     terminal_path = checkpoint_root / "tx-terminal/manifest.json"
@@ -1300,18 +1668,14 @@ def test_completed_registration_mapping_rejects_checkpoint_cycle(tmp_path: Path)
             ]
         }
     )
-    manifest_raw = _write_json_model(durable_manifest, manifest)
-    manifest_refs["row-a"]["metadata"].update(
-        manifest_sha256=hashlib.sha256(manifest_raw).hexdigest(), size_bytes=len(manifest_raw)
-    )
+    _write_json_model(durable_manifest, manifest)
     with pytest.raises(ValueError, match="lineage contains cycle"):
         map_registered_run_set(
             run_set,
             repo_root=tmp_path,
             issue="158b580",
             run_prefix="parity",
-            training_manifest_refs=manifest_refs,
-            manifest_ref_resolvers=resolvers,
+            immutable_artifact_root=provider_root,
         )
 
 
@@ -1336,7 +1700,7 @@ def test_completed_registration_mapping_resolves_cross_root_fork_parent(tmp_path
                 "kind": "TrainingCheckpointTransactionManifest",
                 "id": "tx-root",
                 "role": "training_checkpoint_custody",
-                "uri": "checkpoint-source://tx-root.json",
+                "uri": str(source_path),
                 "metadata": {"manifest_sha256": hashlib.sha256(source_raw).hexdigest()},
             },
         }
@@ -1370,21 +1734,13 @@ def test_completed_registration_mapping_resolves_cross_root_fork_parent(tmp_path
             ]
         }
     )
-    manifest_raw = _write_json_model(durable_manifest, training_manifest)
-    manifest_refs["row-a"]["metadata"].update(
-        manifest_sha256=hashlib.sha256(manifest_raw).hexdigest(), size_bytes=len(manifest_raw)
-    )
-    resolvers = {
-        "durable-manifest": rooted_manifest_ref_resolver(tmp_path / "durable-provider"),
-        "checkpoint-source": rooted_manifest_ref_resolver(source_provider),
-    }
+    _write_json_model(durable_manifest, training_manifest)
     (recipe_path,) = map_registered_run_set(
         run_set,
         repo_root=tmp_path,
         issue="158b580",
         run_prefix="parity",
-        training_manifest_refs=manifest_refs,
-        manifest_ref_resolvers=resolvers,
+        immutable_artifact_root=tmp_path / "immutable-provider",
     )
     recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
     assert recipe["checkpoint_lineage_refs"][0]["transaction_id"] == "tx-root"
@@ -1399,6 +1755,5 @@ def test_completed_registration_mapping_resolves_cross_root_fork_parent(tmp_path
             repo_root=tmp_path / "missing",
             issue="158b580",
             run_prefix="parity",
-            training_manifest_refs=manifest_refs,
-            manifest_ref_resolvers=resolvers,
+            immutable_artifact_root=tmp_path / "immutable-provider",
         )

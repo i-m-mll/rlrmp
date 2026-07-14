@@ -6,56 +6,47 @@ import hashlib
 import json
 import shutil
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from feedbax.contracts.checkpoints import CheckpointTransactionManifest
-from feedbax.contracts.manifest import ArtifactRef, TrainingRunManifest, store_bytes_artifact
+from feedbax.contracts.manifest import ArtifactRef, TrainingRunManifest
 from feedbax.orchestration.conformance import RunConformanceCertificate
-
-ManifestRefResolver = Callable[[Mapping[str, object]], bytes]
+from feedbax.persistence import (
+    ImmutableArtifactBlobProvider,
+    ImmutableArtifactBlobProviderSpec,
+    open_immutable_artifact_blob_provider,
+)
+from feedbax.training import TrainingDiagnostics
+from feedbax.training.diagnostics import (
+    TRAINING_DIAGNOSTICS_SCHEMA_ID,
+    TRAINING_DIAGNOSTICS_SCHEMA_VERSION,
+)
 
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _portable_artifact_ref(ref: ArtifactRef) -> dict[str, object]:
-    """Return an immutable ref that is independent of this checkout's path."""
-    payload = ref.model_dump(mode="json", exclude_none=True)
-    payload["uri"] = ref.artifact_id
-    return payload
-
-
 def _store_evidence(
     data: bytes,
     *,
-    root: Path,
+    provider: ImmutableArtifactBlobProvider,
     role: str,
     logical_name: str,
     metadata: Mapping[str, object],
 ) -> dict[str, object]:
-    ref = store_bytes_artifact(
+    ref = provider.store_bytes(
         data,
-        root=root,
         role=role,
         logical_name=logical_name,
         media_type="application/json",
-        suffix=".json",
         metadata=dict(metadata),
     )
-    relative = ref.metadata.get("relative_path")
-    if not isinstance(relative, str):
-        raise ValueError("stored evidence has no materialized relative path")
-    materialized = root / relative
-    if (
-        not materialized.is_file()
-        or materialized.stat().st_size != len(data)
-        or _sha256(materialized.read_bytes()) != _sha256(data)
-    ):
+    if provider.get_bytes(ref) != data:
         raise ValueError("stored evidence CAS object failed post-write verification")
-    return _portable_artifact_ref(ref)
+    return ref.model_dump(mode="json", exclude_none=True)
 
 
 def _read_json_object(path: Path, *, label: str) -> tuple[bytes, dict[str, object]]:
@@ -78,9 +69,7 @@ def _training_manifest_ref(
     row_id: str,
     execution_hash: str,
     registration: Mapping[str, object],
-    supplied_ref: Mapping[str, object] | None,
-    resolvers: Mapping[str, ManifestRefResolver],
-) -> tuple[TrainingRunManifest, dict[str, object]]:
+) -> tuple[TrainingRunManifest, ArtifactRef, TrainingDiagnostics, bytes, dict[str, object]]:
     try:
         manifest = TrainingRunManifest.model_validate_json(raw)
     except Exception as exc:
@@ -95,11 +84,11 @@ def _training_manifest_ref(
     planned_run_id = row_provenance.get("planned_run_id")
     if not isinstance(planned_run_id, str) or not planned_run_id:
         raise ValueError(f"collected row {row_id!r} has no governed planned_run_id")
-    if manifest.job_id != planned_run_id:
+    if manifest.job_id != planned_run_id or manifest.id != planned_run_id:
         raise ValueError(f"collected row {row_id!r} TrainingRunManifest planned_run_id mismatch")
     if manifest.execution_hash != execution_hash:
         raise ValueError(f"collected row {row_id!r} TrainingRunManifest execution_hash mismatch")
-    expected_metadata = {
+    manifest_metadata = {
         "manifest_sha256": _sha256(raw),
         "size_bytes": len(raw),
         "run_set_id": run_set_id,
@@ -110,110 +99,92 @@ def _training_manifest_ref(
         "certificate_sha256": registration["certificate_sha256"],
         "planned_run_id": planned_run_id,
     }
-    if supplied_ref is None:
+    diagnostics_refs = [ref for ref in manifest.artifacts if ref.role == "training_diagnostics"]
+    if len(diagnostics_refs) != 1:
         raise ValueError(
-            f"collected row {row_id!r} requires a resolver-backed immutable manifest ref"
+            f"TrainingRunManifest requires exactly one training_diagnostics artifact; "
+            f"found {len(diagnostics_refs)}"
         )
-    uri = supplied_ref.get("uri")
-    scheme = urlparse(uri).scheme if isinstance(uri, str) else ""
-    if not uri or not scheme or scheme == "file":
-        raise ValueError("TrainingRunManifest ref URI must name an explicit immutable provider")
-    resolver = resolvers.get(scheme)
-    if resolver is None:
-        raise ValueError(f"TrainingRunManifest ref has no resolver for scheme {scheme!r}")
-    actual = dict(supplied_ref)
-    if set(actual) != {"kind", "id", "role", "uri", "metadata"}:
-        raise ValueError("TrainingRunManifest immutable ref has unexpected or missing fields")
-    if actual.get("kind") != "TrainingRunManifest":
-        raise ValueError("TrainingRunManifest immutable ref kind mismatch")
-    if actual.get("id") != manifest.id:
-        raise ValueError("TrainingRunManifest immutable ref id mismatch")
-    if actual.get("role") != "training_run":
-        raise ValueError("TrainingRunManifest immutable ref role mismatch")
-    actual_metadata = actual.get("metadata")
-    if not isinstance(actual_metadata, Mapping) or dict(actual_metadata) != expected_metadata:
-        raise ValueError("TrainingRunManifest immutable ref metadata mismatch")
-    resolved_raw = resolver(actual)
-    if not isinstance(resolved_raw, bytes):
-        raise ValueError("TrainingRunManifest resolver must return exact bytes")
+    diagnostics_ref = diagnostics_refs[0]
+    diagnostics_raw = _read_original_artifact(diagnostics_ref, label="training diagnostics")
+    _validate_artifact_bytes(diagnostics_ref, diagnostics_raw, label="training diagnostics")
+    canonical_diagnostics_id = f"artifact://sha256/{diagnostics_ref.sha256}"
     if (
-        len(resolved_raw) != actual_metadata["size_bytes"]
-        or _sha256(resolved_raw) != actual_metadata["manifest_sha256"]
+        diagnostics_ref.artifact_id is not None
+        and diagnostics_ref.artifact_id != canonical_diagnostics_id
     ):
-        raise ValueError("TrainingRunManifest resolver returned bytes with wrong size or sha256")
-    if resolved_raw != raw:
-        raise ValueError("TrainingRunManifest resolver did not materialize the collected bytes")
+        raise ValueError("training diagnostics artifact_id is not canonical for its sha256")
+    if diagnostics_ref.media_type != "application/json":
+        raise ValueError("training diagnostics artifact media_type must be application/json")
+    if diagnostics_ref.metadata.get("schema_id") != TRAINING_DIAGNOSTICS_SCHEMA_ID:
+        raise ValueError("training diagnostics artifact schema_id mismatch")
+    if diagnostics_ref.metadata.get("schema_version") != TRAINING_DIAGNOSTICS_SCHEMA_VERSION:
+        raise ValueError("training diagnostics artifact schema_version mismatch")
     try:
-        resolved = TrainingRunManifest.model_validate_json(resolved_raw)
+        diagnostics = TrainingDiagnostics.model_validate_json(diagnostics_raw)
     except Exception as exc:
-        raise ValueError("TrainingRunManifest resolver returned invalid manifest bytes") from exc
+        raise ValueError("training diagnostics artifact has invalid typed bytes") from exc
+    if diagnostics.manifest_id != manifest.id or diagnostics.run_id != manifest.job_id:
+        raise ValueError("training diagnostics artifact parent/run identity mismatch")
+    if diagnostics.terminal_status != manifest.status:
+        raise ValueError("training diagnostics terminal status mismatch")
     if (
-        resolved.kind != actual["kind"]
-        or resolved.id != actual["id"]
-        or resolved.status != actual_metadata["manifest_status"]
-        or resolved.run_set_id not in (None, actual_metadata["run_set_id"])
-        or not isinstance(resolved.metadata.get("training_row_provenance"), Mapping)
-        or resolved.metadata["training_row_provenance"].get("row_id") != actual_metadata["row_id"]
-        or resolved.metadata["training_row_provenance"].get("planned_run_id")
-        != actual_metadata["planned_run_id"]
+        manifest.completed_batches is None
+        or diagnostics.completed_batches != manifest.completed_batches
     ):
-        raise ValueError("TrainingRunManifest resolver returned mismatched manifest identity")
-    return manifest, actual
+        raise ValueError("training diagnostics completed batch count mismatch")
+    return manifest, diagnostics_ref, diagnostics, diagnostics_raw, manifest_metadata
 
 
-def rooted_manifest_ref_resolver(root: Path) -> ManifestRefResolver:
-    """Resolve one provider URI beneath an explicit durable root, without search."""
-    root = root.resolve()
+def _read_original_artifact(ref: ArtifactRef, *, label: str) -> bytes:
+    """Read one authoritative source artifact only during mapping."""
+    if not isinstance(ref.uri, str) or not ref.uri:
+        raise ValueError(f"{label} artifact has no source URI")
+    path = _explicit_local_path(ref.uri, context=f"{label} source")
+    if not path.is_file():
+        raise ValueError(f"{label} source is not materialized: {path}")
+    return path.read_bytes()
 
-    def resolve(ref: Mapping[str, object]) -> bytes:
-        uri = ref.get("uri")
-        if not isinstance(uri, str):
-            raise ValueError("manifest ref URI must be a string")
-        parsed = urlparse(uri)
-        relative = Path(parsed.netloc, parsed.path.lstrip("/"))
-        if relative.is_absolute() or ".." in relative.parts:
-            raise ValueError("manifest ref URI escapes its explicit provider root")
-        path = (root / relative).resolve()
-        if root not in path.parents:
-            raise ValueError("manifest ref URI escapes its explicit provider root")
-        if not path.is_file():
-            raise ValueError(f"manifest ref is not materialized by provider: {uri}")
-        return path.read_bytes()
 
-    return resolve
+def _validate_artifact_bytes(ref: ArtifactRef, raw: bytes, *, label: str) -> None:
+    if not isinstance(ref.sha256, str) or _sha256(raw) != ref.sha256:
+        raise ValueError(f"{label} artifact sha256 mismatch")
+    if ref.size_bytes != len(raw):
+        raise ValueError(f"{label} artifact size mismatch")
 
 
 def _resolve_ref_bytes(
     ref: Mapping[str, object],
     *,
-    resolvers: Mapping[str, ManifestRefResolver],
     context: str,
 ) -> tuple[bytes, Path | None]:
     uri = ref.get("uri")
     if not isinstance(uri, str) or not uri:
         raise ValueError(f"{context} has no explicit URI")
-    parsed = urlparse(uri)
-    if parsed.scheme == "file":
-        path = Path(parsed.path)
-    elif not parsed.scheme:
-        path = Path(uri)
-    else:
-        resolver = resolvers.get(parsed.scheme)
-        if resolver is None:
-            raise ValueError(f"{context} has no resolver for scheme {parsed.scheme!r}")
-        raw = resolver(ref)
-        if not isinstance(raw, bytes):
-            raise ValueError(f"{context} resolver must return exact bytes")
-        return raw, None
+    path = _explicit_local_path(uri, context=context)
     if not path.is_file():
         raise ValueError(f"{context} is not materialized: {path}")
     return path.read_bytes(), path
 
 
+def _explicit_local_path(uri: str, *, context: str) -> Path:
+    """Resolve only explicit absolute local paths, never ambient cwd-relative names."""
+    parsed = urlparse(uri)
+    if parsed.scheme == "file":
+        if parsed.netloc:
+            raise ValueError(f"{context} file URI must not contain a netloc")
+        path = Path(unquote(parsed.path))
+    elif not parsed.scheme:
+        path = Path(uri)
+    else:
+        raise ValueError(f"{context} URI must name an explicit retained local path")
+    if not path.is_absolute():
+        raise ValueError(f"{context} URI must name an absolute local path")
+    return path
+
+
 def _checkpoint_lineage_evidence(
     manifest: TrainingRunManifest,
-    *,
-    resolvers: Mapping[str, ManifestRefResolver],
 ) -> list[tuple[bytes, CheckpointTransactionManifest, str]]:
     """Verify exact transaction manifests and return them parent before child."""
     if not manifest.checkpoint_custody:
@@ -231,7 +202,6 @@ def _checkpoint_lineage_evidence(
         ref_payload = ref.model_dump(mode="json", exclude_none=True)
         raw, path = _resolve_ref_bytes(
             ref_payload,
-            resolvers=resolvers,
             context=f"checkpoint transaction {transaction_id!r}",
         )
         declared_raw[transaction_id] = raw
@@ -269,7 +239,6 @@ def _checkpoint_lineage_evidence(
                     if manifest_ref.uri:
                         raw, path = _resolve_ref_bytes(
                             ref_payload,
-                            resolvers=resolvers,
                             context=f"checkpoint lineage parent {transaction_id!r}",
                         )
                 lineage_digest = lineage.metadata.get("manifest_sha256")
@@ -285,7 +254,6 @@ def _checkpoint_lineage_evidence(
                 if raw is None and isinstance(source_uri, str):
                     raw, path = _resolve_ref_bytes(
                         {"uri": source_uri},
-                        resolvers=resolvers,
                         context=f"fork source transaction {transaction_id!r}",
                     )
                 elif (
@@ -296,7 +264,6 @@ def _checkpoint_lineage_evidence(
                     uri = custody_root_uri.rstrip("/") + "/" + source.manifest_relative_path
                     raw, path = _resolve_ref_bytes(
                         {"uri": uri},
-                        resolvers=resolvers,
                         context=f"fork source transaction {transaction_id!r}",
                     )
             if raw is None and expected_hash is not None:
@@ -389,7 +356,7 @@ def _checkpoint_lineage_evidence(
 def _store_checkpoint_lineage(
     evidence: list[tuple[bytes, CheckpointTransactionManifest, str]],
     *,
-    evidence_root: Path,
+    provider: ImmutableArtifactBlobProvider,
     run_set_id: str,
     row_id: str,
 ) -> list[dict[str, object]]:
@@ -400,7 +367,7 @@ def _store_checkpoint_lineage(
         transaction_id = transaction.transaction_id
         artifact = _store_evidence(
             raw,
-            root=evidence_root,
+            provider=provider,
             role="training_checkpoint_transaction_manifest",
             logical_name=f"{transaction_id}.json",
             metadata={
@@ -476,8 +443,10 @@ def map_registered_run_set(
     repo_root: Path,
     issue: str,
     run_prefix: str,
-    training_manifest_refs: Mapping[str, Mapping[str, object]] | None = None,
-    manifest_ref_resolvers: Mapping[str, ManifestRefResolver] | None = None,
+    immutable_artifact_root: Path,
+    immutable_artifact_blob_provider_spec: (
+        ImmutableArtifactBlobProviderSpec | Mapping[str, object] | None
+    ) = None,
 ) -> tuple[Path, ...]:
     """Idempotently materialize REGISTERed rows for ``post_run.sh``."""
     registration_raw, registration = _read_json_object(
@@ -501,61 +470,134 @@ def map_registered_run_set(
         raise ValueError("registration certificate_sha256 does not match conformance bytes")
 
     _bundle_raw, bundle = _read_json_object(run_set_dir / "bundle.json", label="run bundle")
-    resolvers = manifest_ref_resolvers or {}
+    provider_spec = (
+        ImmutableArtifactBlobProviderSpec()
+        if immutable_artifact_blob_provider_spec is None
+        else ImmutableArtifactBlobProviderSpec.model_validate(immutable_artifact_blob_provider_spec)
+    )
+    provider = open_immutable_artifact_blob_provider(
+        provider_spec,
+        explicit_root=immutable_artifact_root,
+    )
     prepared: list[dict[str, object]] = []
-    # Validate every row and externally resolved byte before the first mapped write.
-    # This keeps a missing provider/ref from leaving a half-published packet.
+    # Validate every row and authoritative source byte before publishing mapped files.
     for row in bundle["rows"]:
         row_id = str(row["row_id"])
         execution_hash = str(row["execution"]["execution_capsule"]["execution_hash"])
         source = run_set_dir / "collected" / row_id
-        for name in ("training-diagnostics.json", "training_summary.json"):
-            if not (source / name).is_file():
-                raise ValueError(f"collected row {row_id!r} is missing {name}")
+        if not (source / "training_summary.json").is_file():
+            raise ValueError(f"collected row {row_id!r} is missing training_summary.json")
         manifest_path = source / "manifest.json"
         if not manifest_path.is_file():
             raise ValueError(f"collected row {row_id!r} is missing manifest.json")
-        manifest, manifest_ref = _training_manifest_ref(
-            manifest_path.read_bytes(),
-            run_set_id=run_set_id,
-            row_id=row_id,
-            execution_hash=execution_hash,
-            registration=registration,
-            supplied_ref=(training_manifest_refs or {}).get(row_id),
-            resolvers=resolvers,
+        manifest_raw = manifest_path.read_bytes()
+        manifest, diagnostics_source_ref, diagnostics, diagnostics_raw, manifest_metadata = (
+            _training_manifest_ref(
+                manifest_raw,
+                run_set_id=run_set_id,
+                row_id=row_id,
+                execution_hash=execution_hash,
+                registration=registration,
+            )
         )
+        collected_diagnostics = source / "training-diagnostics.json"
+        if (
+            collected_diagnostics.is_file()
+            and collected_diagnostics.read_bytes() != diagnostics_raw
+        ):
+            raise ValueError(
+                f"collected row {row_id!r} diagnostics differ from authoritative artifact"
+            )
         prepared.append(
             {
                 "row_id": row_id,
                 "execution_hash": execution_hash,
                 "source": source,
-                "manifest_ref": manifest_ref,
+                "manifest": manifest,
+                "manifest_raw": manifest_raw,
+                "manifest_metadata": manifest_metadata,
+                "diagnostics_source_ref": diagnostics_source_ref,
+                "diagnostics": diagnostics,
+                "diagnostics_raw": diagnostics_raw,
                 "checkpoint_evidence": _checkpoint_lineage_evidence(
                     manifest,
-                    resolvers=resolvers,
                 ),
             }
         )
 
+    for item in prepared:
+        manifest = item["manifest"]
+        diagnostics_source_ref = item["diagnostics_source_ref"]
+        diagnostics = item["diagnostics"]
+        if not isinstance(manifest, TrainingRunManifest):
+            raise TypeError("prepared manifest has unexpected type")
+        if not isinstance(diagnostics_source_ref, ArtifactRef):
+            raise TypeError("prepared diagnostics ref has unexpected type")
+        if not isinstance(diagnostics, TrainingDiagnostics):
+            raise TypeError("prepared diagnostics have unexpected type")
+        manifest_raw = item["manifest_raw"]
+        diagnostics_raw = item["diagnostics_raw"]
+        if not isinstance(manifest_raw, bytes) or not isinstance(diagnostics_raw, bytes):
+            raise TypeError("prepared provider payload has unexpected type")
+        row_id = str(item["row_id"])
+        manifest_artifact = provider.store_bytes(
+            manifest_raw,
+            role="training_run",
+            logical_name=f"{manifest.id}.json",
+            media_type="application/json",
+            metadata={
+                "manifest_id": manifest.id,
+                "run_set_id": run_set_id,
+                "row_id": row_id,
+                "planned_run_id": manifest.job_id,
+            },
+        )
+        if provider.get_bytes(manifest_artifact) != manifest_raw:
+            raise ValueError("TrainingRunManifest provider did not preserve exact bytes")
+        item["manifest_ref"] = {
+            "kind": manifest.kind,
+            "id": manifest.id,
+            "role": "training_run",
+            "uri": manifest_artifact.uri,
+            "metadata": item["manifest_metadata"],
+        }
+        diagnostics_metadata = {
+            "schema_id": TRAINING_DIAGNOSTICS_SCHEMA_ID,
+            "schema_version": TRAINING_DIAGNOSTICS_SCHEMA_VERSION,
+            "training_manifest_id": manifest.id,
+            "run_set_id": run_set_id,
+            "row_id": row_id,
+            "planned_run_id": manifest.job_id,
+            "run_id": diagnostics.run_id,
+        }
+        mapped_diagnostics_ref = provider.store_bytes(
+            diagnostics_raw,
+            role=diagnostics_source_ref.role,
+            logical_name=diagnostics_source_ref.logical_name,
+            media_type=diagnostics_source_ref.media_type,
+            metadata=diagnostics_metadata,
+        )
+        if provider.get_bytes(mapped_diagnostics_ref) != diagnostics_raw:
+            raise ValueError("training diagnostics provider did not preserve exact bytes")
+        item["diagnostics_ref"] = mapped_diagnostics_ref.model_dump(mode="json", exclude_none=True)
+
     issue_root = repo_root / "_artifacts" / issue
-    evidence_root = issue_root / "run_sets" / run_set_id / "evidence"
     final_targets = [issue_root / "runs" / f"{run_prefix}__{item['row_id']}" for item in prepared]
     outputs = tuple(target / "run.json" for target in final_targets)
     issue_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".mapped-run-stage-", dir=issue_root) as temporary:
         staging_root = Path(temporary)
-        staged_evidence_root = staging_root / "evidence"
         common_metadata = {"run_set_id": run_set_id}
         registration_ref = _store_evidence(
             registration_raw,
-            root=staged_evidence_root,
+            provider=provider,
             role="orchestration_registration",
             logical_name="registration.json",
             metadata=common_metadata,
         )
         conformance_ref = _store_evidence(
             conformance_raw,
-            root=staged_evidence_root,
+            provider=provider,
             role="orchestration_conformance_certificate",
             logical_name="conformance.json",
             metadata=common_metadata,
@@ -568,35 +610,40 @@ def map_registered_run_set(
             source = Path(item["source"])
             staged_target = staging_root / "rows" / target.name
             staged_target.mkdir(parents=True)
-            copied: dict[str, str] = {}
-            for name in ("training-diagnostics.json", "training_summary.json"):
-                source_path = source / name
-                staged_path = staged_target / name
-                shutil.copy2(source_path, staged_path)
-                if staged_path.read_bytes() != source_path.read_bytes():
-                    raise ValueError(f"staged collected row {row_id!r} {name} failed verification")
-                copied[name] = str((target / name).relative_to(repo_root))
+            source_path = source / "training_summary.json"
+            staged_path = staged_target / "training_summary.json"
+            shutil.copy2(source_path, staged_path)
+            if staged_path.read_bytes() != source_path.read_bytes():
+                raise ValueError(
+                    f"staged collected row {row_id!r} training_summary.json failed verification"
+                )
+            reviewer_convenience_paths = {
+                "training_summary": str((target / "training_summary.json").relative_to(repo_root))
+            }
 
             checkpoint_refs = _store_checkpoint_lineage(
                 item["checkpoint_evidence"],  # type: ignore[arg-type]
-                evidence_root=staged_evidence_root,
+                provider=provider,
                 run_set_id=run_set_id,
                 row_id=row_id,
             )
             recipe = {
                 "schema_id": "rlrmp.spec.orchestrated_post_run",
-                "schema_version": "rlrmp.spec.orchestrated_post_run.v2",
+                "schema_version": "rlrmp.spec.orchestrated_post_run.v3",
                 "issue": issue,
                 "run_set_id": run_set_id,
                 "row_id": row_id,
                 "certificate_sha256": registration["certificate_sha256"],
                 "execution_hash": execution_hash,
-                "evidence_custody_root": str(evidence_root.relative_to(repo_root)),
                 "registration_artifact_ref": registration_ref,
                 "conformance_artifact_ref": conformance_ref,
                 "training_manifest_ref": item["manifest_ref"],
+                "training_diagnostics_artifact_ref": item["diagnostics_ref"],
+                "immutable_artifact_blob_provider_spec": provider_spec.model_dump(
+                    mode="json", exclude_none=True
+                ),
                 "checkpoint_lineage_refs": checkpoint_refs,
-                "source_paths": copied,
+                "reviewer_convenience_paths": reviewer_convenience_paths,
             }
             recipe_path = staged_target / "run.json"
             encoded = json.dumps(recipe, indent=2, sort_keys=True) + "\n"
@@ -605,15 +652,11 @@ def map_registered_run_set(
                 raise ValueError(f"staged collected row {row_id!r} recipe failed verification")
             staged_rows.append(staged_target)
 
-        if evidence_root.exists() and not _directory_bytes_equal(
-            staged_evidence_root, evidence_root
-        ):
-            raise ValueError("stored evidence CAS object failed post-write verification")
         _publish_staged_directories(
-            [(staged_evidence_root, evidence_root), *zip(staged_rows, final_targets, strict=True)],
+            list(zip(staged_rows, final_targets, strict=True)),
             backup_root=staging_root / "backups",
         )
     return outputs
 
 
-__all__ = ["map_registered_run_set", "rooted_manifest_ref_resolver"]
+__all__ = ["map_registered_run_set"]
