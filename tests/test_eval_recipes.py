@@ -52,11 +52,16 @@ def _training_ref(run_id: str = "training-run-a") -> ParentRef:
     return ParentRef(kind="TrainingRunManifest", id=run_id, role="training_run")
 
 
-def _spec(evaluation_type: str, params: dict[str, Any]) -> EvaluationRunSpec:
+def _spec(
+    evaluation_type: str,
+    params: dict[str, Any],
+    *,
+    include_inputs: bool = True,
+) -> EvaluationRunSpec:
     return EvaluationRunSpec(
         evaluation_type=evaluation_type,
         training_run_ids=["training-run-a"],
-        inputs=[_training_ref()],
+        inputs=[_training_ref()] if include_inputs else [],
         params=params,
     )
 
@@ -126,9 +131,7 @@ def test_delayed_reach_recipe_places_profile_facets_on_manifest(tmp_path: Path) 
 
     facet = manifest.metadata["figure_payload"]["facets"]["condition"]["example/row-a"]
     assert facet["display_name"] == "Row A"
-    assert facet["forward_velocity"]["series"][0]["profile"]["upper"] == pytest.approx(
-        [0.01, 0.22]
-    )
+    assert facet["forward_velocity"]["series"][0]["profile"]["upper"] == pytest.approx([0.01, 0.22])
     states = _load_cached_states(manifest)
     assert states["profile_payloads"] == profile_payloads
 
@@ -239,6 +242,7 @@ def _bank() -> dict[str, Any]:
                 "extlqg_physical_dim": 8,
                 "preferred_checkpoint_manifest_path": None,
                 "checkpoint_selection_mode": "sparse_history",
+                "checkpoint_custody_root": None,
             },
         ),
         (
@@ -262,6 +266,7 @@ def _bank() -> dict[str, Any]:
                 "repo_root": None,
                 "bank": None,
                 "evaluation_bins": None,
+                "checkpoint_custody_root": None,
             },
         ),
         (
@@ -520,7 +525,9 @@ def test_registered_eval_recipes_execute_and_reuse_states_cache(
             },
         )
     stamped = stamp_current_schema(params_kind, params)
-    spec = _spec(evaluation_type, stamped)
+    include_inputs = evaluation_type != FEEDBACK_ABLATION_EVALUATION_TYPE
+    expected_input_count = int(include_inputs)
+    spec = _spec(evaluation_type, stamped, include_inputs=include_inputs)
     expected_manifest_id = evaluation_run_manifest_id(spec)
     expected_params_sha = _canonical_sha256(stamped)
 
@@ -532,7 +539,7 @@ def test_registered_eval_recipes_execute_and_reuse_states_cache(
     assert cached_manifest.id == manifest.id
     assert cached_manifest.metadata["cache"]["states_cache_hit"] is True
     assert cached_manifest.metadata["rlrmp_evaluation_recipe"] == evaluation_type
-    assert cached_manifest.summary_metrics["input_training_runs"] == 1
+    assert cached_manifest.summary_metrics["input_training_runs"] == expected_input_count
     assert cached_manifest.summary_metrics["input_ref_count"] == 1
     assert cached_manifest.metadata["caching_identity"]["source"] == "EvaluationRunSpec"
 
@@ -549,13 +556,13 @@ def test_registered_eval_recipes_execute_and_reuse_states_cache(
     assert manifest.status == "completed"
     assert manifest.summary_metrics["training_run_id_count"] == 1
     assert manifest.metadata["params_schema_id"] == stamped["schema_id"]
-    assert manifest.input_training_runs == [_training_ref()]
-    assert manifest.summary_metrics["input_ref_count"] == len(manifest.input_training_runs)
+    assert manifest.input_training_runs == ([_training_ref()] if include_inputs else [])
+    assert manifest.summary_metrics["input_ref_count"] == len(spec.training_run_ids)
     assert manifest.metadata["cache"]["states_cache_hit"] is False
     assert manifest.metadata["cache"]["states_cache_saved"] is True
 
     changed_params = _identity_changed_params(evaluation_type, stamped)
-    changed_spec = _spec(evaluation_type, changed_params)
+    changed_spec = _spec(evaluation_type, changed_params, include_inputs=include_inputs)
     changed_manifest, _changed_path = execute_evaluation_run_spec(
         changed_spec,
         root=tmp_path,
@@ -626,7 +633,7 @@ def test_perturbation_response_bank_legacy_payload_requires_explicit_mode(
             "response_tensors": {"runs": {}},
         },
     )
-    spec = _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, params)
+    spec = _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, params, include_inputs=False)
 
     with pytest.raises(EvaluationRecipeExecutionError) as excinfo:
         execute_evaluation_run_spec(spec, root=tmp_path, force=True)
@@ -657,9 +664,7 @@ def test_perturbation_response_bank_model_driven_emits_class_index_map(
 
     def fake_evaluate(run: Any, **kwargs: Any) -> dict[str, Any]:
         assert run.run_id == "training-run-a"
-        assert [row["perturbation_id"] for row in kwargs["bank"]["perturbations"]] == [
-            "row-a"
-        ]
+        assert [row["perturbation_id"] for row in kwargs["bank"]["perturbations"]] == ["row-a"]
         return {
             "label": "Run A",
             "status_counts": {"evaluated": 1},
@@ -677,7 +682,7 @@ def test_perturbation_response_bank_model_driven_emits_class_index_map(
             "class_set": ["command_input_pulse"],
         },
     )
-    spec = _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, params)
+    spec = _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, params, include_inputs=False)
 
     manifest, _path = execute_evaluation_run_spec(spec, root=tmp_path, force=True)
     states = _load_cached_states(manifest)
@@ -688,9 +693,7 @@ def test_perturbation_response_bank_model_driven_emits_class_index_map(
     assert manifest.summary_metrics["perturbation_family_count"] == 1
     assert manifest.summary_metrics["perturbation_row_count"] == 1
     assert manifest.summary_metrics["evaluated_run_count"] == 1
-    assert states["response_tensors"]["runs"]["training-run-a"]["status_counts"] == {
-        "evaluated": 1
-    }
+    assert states["response_tensors"]["runs"]["training-run-a"]["status_counts"] == {"evaluated": 1}
     assert list(class_index) == ["command_input_pulse"]
     assert class_index["command_input_pulse"]["perturbation_ids"] == ["row-a"]
     assert class_index["command_input_pulse"]["tensor_slices"] == {
@@ -700,9 +703,10 @@ def test_perturbation_response_bank_model_driven_emits_class_index_map(
         "start": 0,
         "stop": 1,
     }
-    assert class_index["command_input_pulse"]["calibration_provenance"]["row-a"][
-        "calibration_mode"
-    ] == "unit_test"
+    assert (
+        class_index["command_input_pulse"]["calibration_provenance"]["row-a"]["calibration_mode"]
+        == "unit_test"
+    )
 
 
 def test_perturbation_response_bank_stamps_eval_time_calibration_identity(
@@ -737,7 +741,7 @@ def test_perturbation_response_bank_stamps_eval_time_calibration_identity(
             "perturbation_battery": {"perturbations": [_perturbation_row("row-a")]},
         },
     )
-    spec = _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, params)
+    spec = _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, params, include_inputs=False)
 
     manifest, _path = execute_evaluation_run_spec(spec, root=tmp_path, force=True)
     states = _load_cached_states(manifest)
@@ -768,7 +772,7 @@ def test_perturbation_response_bank_identity_differs_by_class_set() -> None:
     }
 
     assert evaluation_run_manifest_id(
-        _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, params)
+        _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, params, include_inputs=False)
     ) != evaluation_run_manifest_id(
-        _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, other_params)
+        _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, other_params, include_inputs=False)
     )

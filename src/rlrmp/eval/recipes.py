@@ -7,6 +7,7 @@ import json
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal
 
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
@@ -17,7 +18,11 @@ from feedbax.contracts.manifest import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.runtime.params_models import params_model_for, register_params_model
-from rlrmp.eval.feedback_ablation import evaluate_feedback_ablation_runs
+from rlrmp.eval.feedback_ablation import (
+    evaluate_feedback_ablation_runs,
+    evaluate_projected_feedback_ablation_run,
+)
+from rlrmp.eval.model_slots import ModelSlotProjection
 from rlrmp.eval.broad_epsilon import evaluate_broad_epsilon_runs
 from rlrmp.eval.evaluation_diagnostics import (
     DEFAULT_N_ROLLOUT_TRIALS,
@@ -40,12 +45,8 @@ FEEDBACK_ABLATION_EVALUATION_TYPE = "rlrmp.eval.feedback_ablation"
 WORST_CASE_EPSILON_EVALUATION_TYPE = "rlrmp.eval.worst_case_epsilon"
 BROAD_EPSILON_EVALUATION_TYPE = "rlrmp.eval.broad_epsilon"
 DELAYED_REACH_BANK_EVALUATION_TYPE = "rlrmp.eval.delayed_reach_bank"
-DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_ID = (
-    "rlrmp.figure_data.delayed_velocity_profiles"
-)
-DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_VERSION = (
-    "rlrmp.figure_data.delayed_velocity_profiles.v1"
-)
+DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_ID = "rlrmp.figure_data.delayed_velocity_profiles"
+DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_VERSION = "rlrmp.figure_data.delayed_velocity_profiles.v1"
 
 _RECIPE_PARAM_KINDS = {
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE: CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
@@ -141,6 +142,7 @@ class PerturbationResponseBankEvalParams(_StrictParamsModel):
     extlqg_physical_dim: Literal[6, 8] = 8
     preferred_checkpoint_manifest_path: str | None = None
     checkpoint_selection_mode: Literal["sparse_history", "fixed_bank_manifest"] = "sparse_history"
+    checkpoint_custody_root: str | None = None
 
 
 class FeedbackAblationEvalParams(_StrictParamsModel):
@@ -161,6 +163,7 @@ class FeedbackAblationEvalParams(_StrictParamsModel):
     repo_root: str | None = None
     bank: dict[str, Any] | None = None
     evaluation_bins: dict[str, str | None] | None = None
+    checkpoint_custody_root: str | None = None
 
 
 class WorstCaseEpsilonEvalParams(_StrictParamsModel):
@@ -370,23 +373,40 @@ def perturbation_response_bank_recipe(
 
 def feedback_ablation_recipe(
     run_spec: EvaluationRunSpec,
-    _root: Path,
+    root: Path,
     _states_path: Path,
 ) -> EvaluationRecipeResult:
     """Evaluate intact-vs-ablated feedback rollout pairs."""
 
     p, params = _validated_params(run_spec)
-    if not p.source_experiment or not p.run_ids:
+    has_legacy_selector = bool(params.get("source_experiment")) and bool(params.get("run_ids"))
+    if run_spec.inputs and has_legacy_selector:
+        raise ValueError(
+            "feedback-ablation evaluation cannot mix exact native parents with legacy "
+            "source_experiment/run_ids selectors"
+        )
+    if run_spec.inputs:
+        projection = _native_model_projection(
+            run_spec,
+            manifest_root=root,
+            checkpoint_custody_root=params.get("checkpoint_custody_root"),
+        )
+        payload = evaluate_projected_feedback_ablation_run(
+            projection,
+            p.model_dump(mode="python"),
+        )
+    elif not p.source_experiment or not p.run_ids:
         raise ValueError(
             "feedback-ablation evaluation requires source_experiment and non-empty run_ids"
         )
-    execution_params = p.model_dump(mode="python")
-    repo_root_value = execution_params.get("repo_root")
-    repo_root = Path(str(repo_root_value)).expanduser() if repo_root_value else Path.cwd()
-    payload = evaluate_feedback_ablation_runs(
-        execution_params,
-        repo_root=repo_root,
-    )
+    else:
+        execution_params = p.model_dump(mode="python")
+        repo_root_value = execution_params.get("repo_root")
+        repo_root = Path(str(repo_root_value)).expanduser() if repo_root_value else Path.cwd()
+        payload = evaluate_feedback_ablation_runs(
+            execution_params,
+            repo_root=repo_root,
+        )
     return _result(
         run_spec,
         params,
@@ -543,14 +563,11 @@ def delayed_velocity_profile_payload(
                     "evaluation_bank": raw_profile.get("evaluation_bank", {}),
                 }
             )
-            for replicate, replicate_profile in enumerate(
-                _delayed_replicate_bands(raw_profile)
-            ):
+            for replicate, replicate_profile in enumerate(_delayed_replicate_bands(raw_profile)):
                 facet["forward_velocity_by_replicate"]["series"].append(
                     {
                         "label": (
-                            f"{label} ({bank_kind.replace('_', ' ')}, "
-                            f"replicate {replicate + 1})"
+                            f"{label} ({bank_kind.replace('_', ' ')}, replicate {replicate + 1})"
                         ),
                         "color": raw_profile.get("color"),
                         "profile": replicate_profile,
@@ -1016,6 +1033,39 @@ def _evaluate_perturbation_bank_runs(
     bank: Mapping[str, Any],
     root: Path,
 ) -> dict[str, Any]:
+    legacy_run_ids = params.get("run_ids")
+    has_legacy_selector = bool(params.get("source_experiment")) and bool(legacy_run_ids)
+    if run_spec.inputs and has_legacy_selector:
+        raise ValueError(
+            "perturbation-response evaluation cannot mix exact native parents with legacy "
+            "source_experiment/run_ids selectors"
+        )
+    if run_spec.inputs:
+        projection = _native_model_projection(
+            run_spec,
+            manifest_root=root,
+            checkpoint_custody_root=params.get("checkpoint_custody_root"),
+        )
+        labels = params.get("labels")
+        label = (
+            str(labels[0])
+            if isinstance(labels, Sequence) and not isinstance(labels, (str, bytes)) and labels
+            else projection.provenance.run_id
+        )
+        run = SimpleNamespace(label=label)
+        return {
+            projection.provenance.training_manifest_id: _evaluate_single_perturbation_bank_run(
+                run,
+                source_experiment=None,
+                bank=bank,
+                n_rollout_trials=int(params.get("n_rollout_trials", 8)),
+                extlqg_physical_dim=int(params.get("extlqg_physical_dim", 8)),
+                preferred_checkpoint_manifest_path=None,
+                checkpoint_selection_mode="sparse_history",
+                repo_root=root,
+                model_projection=projection,
+            )
+        }
     source_experiment = _source_experiment(params)
     run_ids = tuple(str(run_id) for run_id in params.get("run_ids", run_spec.training_run_ids))
     labels = params.get("labels")
@@ -1088,13 +1138,14 @@ def _resolve_perturbation_run_inputs(
 def _evaluate_single_perturbation_bank_run(
     run: Any,
     *,
-    source_experiment: str,
+    source_experiment: str | None,
     bank: Mapping[str, Any],
     n_rollout_trials: int,
     extlqg_physical_dim: int,
     preferred_checkpoint_manifest_path: Path | None,
     checkpoint_selection_mode: str,
     repo_root: Path,
+    model_projection: ModelSlotProjection | None = None,
 ) -> dict[str, Any]:
     from rlrmp.eval.perturbation_bank import evaluate_run_perturbation_bank
 
@@ -1107,6 +1158,40 @@ def _evaluate_single_perturbation_bank_run(
         preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
         checkpoint_selection_mode=checkpoint_selection_mode,  # type: ignore[arg-type]
         repo_root=repo_root,
+        model_projection=model_projection,
+    )
+
+
+def _native_model_projection(
+    run_spec: EvaluationRunSpec,
+    *,
+    manifest_root: Path,
+    checkpoint_custody_root: str | Path | None,
+) -> ModelSlotProjection:
+    """Resolve and project the one exact native training parent for a recipe."""
+
+    try:
+        from feedbax.analysis import resolve_evaluation_inputs
+    except ImportError as exc:
+        raise RuntimeError(
+            "native model-driven evaluation requires Feedbax resolved evaluation inputs"
+        ) from exc
+    from rlrmp.eval.model_slots import _project_training_model_slot_from_custody_root
+
+    if (
+        not isinstance(checkpoint_custody_root, (str, Path))
+        or not str(checkpoint_custody_root).strip()
+    ):
+        raise ValueError("native model-driven evaluation requires explicit checkpoint_custody_root")
+    checkpoint_root = Path(checkpoint_custody_root).expanduser()
+    if not checkpoint_root.is_absolute():
+        raise ValueError("native model-driven evaluation requires absolute checkpoint_custody_root")
+    resolved = resolve_evaluation_inputs(run_spec, manifest_root=manifest_root)
+    if len(resolved) != 1:
+        raise ValueError("native model-driven evaluation requires exactly one training parent")
+    return _project_training_model_slot_from_custody_root(
+        resolved[0],
+        checkpoint_root=checkpoint_root,
     )
 
 

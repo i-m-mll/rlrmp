@@ -31,6 +31,7 @@ from rlrmp.runtime.spec_migrations import (
     FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
     FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
     FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION,
+    FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION_V2,
     FEEDBACK_QUALITY_LENS_KIND,
     FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND,
     FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID,
@@ -79,6 +80,7 @@ from rlrmp.runtime.spec_migrations import (
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+    PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION_V2,
     ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND,
     ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID,
     ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_VERSION,
@@ -280,6 +282,16 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
                 RUN_SPEC_SCHEMA_VERSION_V1,
                 RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU,
             }
+        elif kind == PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND:
+            assert family.policy.stance == "migrate"
+            assert family.policy.supported_old_versions == (
+                PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION_V2,
+            )
+        elif kind == FEEDBACK_ABLATION_EVAL_PARAMS_KIND:
+            assert family.policy.stance == "migrate"
+            assert family.policy.supported_old_versions == (
+                FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION_V2,
+            )
 
         result = registry.migrate(kind, {"schema_version": current_version})
         assert result.target_version == current_version
@@ -303,6 +315,48 @@ def test_stamp_current_schema_adds_identity_and_version() -> None:
     assert payload["schema_id"] == GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID
     assert payload["schema_version"] == GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION
     assert payload["issue"] == "unit"
+
+
+@pytest.mark.parametrize(
+    ("kind", "schema_id", "source_version", "target_version"),
+    (
+        (
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION_V2,
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+        ),
+        (
+            FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
+            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION_V2,
+            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION,
+        ),
+    ),
+)
+def test_native_eval_params_v2_migrate_additively_to_v3(
+    kind: str,
+    schema_id: str,
+    source_version: str,
+    target_version: str,
+) -> None:
+    result = accept_rlrmp_spec_payload(
+        kind,
+        {
+            "schema_id": schema_id,
+            "schema_version": source_version,
+            "source_experiment": "legacy",
+        },
+    )
+
+    assert result.migrated
+    assert result.target_version == target_version
+    assert result.payload == {
+        "schema_id": schema_id,
+        "schema_version": target_version,
+        "source_experiment": "legacy",
+        "checkpoint_custody_root": None,
+    }
 
 
 def test_rlrmp_payload_acceptance_rejects_wrong_schema_identity() -> None:
@@ -440,19 +494,14 @@ def test_representative_historical_artifacts_load_or_reject_by_policy() -> None:
 def test_historical_feedbax_training_run_spec_migrates_standard_supervised() -> None:
     payload = json.loads(
         (
-            REPO_ROOT
-            / "results"
-            / "1ab1fef"
-            / "runs"
-            / "epsilon_scaled_short_3500to1000.json"
+            REPO_ROOT / "results" / "1ab1fef" / "runs" / "epsilon_scaled_short_3500to1000.json"
         ).read_text(encoding="utf-8")
     )
     original = payload[FEEDBAX_TRAINING_RUN_SPEC_KEY]
     assert (
         f"{original['method_ref']['package']}/"
         f"{original['method_ref']['name']}/"
-        f"{original['method_ref']['version']}"
-        == LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF
+        f"{original['method_ref']['version']}" == LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF
     )
 
     training_spec = feedbax_training_run_spec_from_payload(payload)
@@ -491,11 +540,7 @@ def test_historical_feedbax_training_run_spec_migrates_standard_supervised() -> 
 def test_stripped_legacy_feedbax_training_run_spec_fails_closed() -> None:
     payload = json.loads(
         (
-            REPO_ROOT
-            / "results"
-            / "1ab1fef"
-            / "runs"
-            / "epsilon_scaled_short_3500to1000.json"
+            REPO_ROOT / "results" / "1ab1fef" / "runs" / "epsilon_scaled_short_3500to1000.json"
         ).read_text(encoding="utf-8")
     )
     feedbax_spec = dict(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY])
@@ -521,11 +566,7 @@ def test_stripped_legacy_feedbax_training_run_spec_fails_closed() -> None:
 def test_unsupported_semantic_feedbax_training_run_spec_fails_explicitly() -> None:
     payload = json.loads(
         (
-            REPO_ROOT
-            / "results"
-            / "1ab1fef"
-            / "runs"
-            / "epsilon_scaled_short_3500to1000.json"
+            REPO_ROOT / "results" / "1ab1fef" / "runs" / "epsilon_scaled_short_3500to1000.json"
         ).read_text(encoding="utf-8")
     )
     feedbax_spec = dict(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY])

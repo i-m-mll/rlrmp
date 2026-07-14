@@ -16,7 +16,13 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
-from feedbax import DelayedReachTaskInputs, TaskTrialSpec, TrialTimeline, WhereDict
+from feedbax import (
+    DelayedReachTaskInputs,
+    TaskTrialSpec,
+    TrialTimeline,
+    WhereDict,
+    eval_ensemble_on_trials as feedbax_eval_ensemble_on_trials,
+)
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.objectives.loss import TargetSpec
 from feedbax.runtime.state import CartesianState
@@ -27,7 +33,6 @@ from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
 from rlrmp.eval.checkpoint_selection import (
     DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
 )
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval.kinematics import initial_effector_position, initial_effector_velocity
 from rlrmp.runtime.parameter_presets import EvaluationEnsemblePreset, load_runtime_preset
 from rlrmp.runtime.run_spec_access import require_run_dt, require_run_seed
@@ -58,10 +63,11 @@ N_REPLICATES: int = load_runtime_preset(
 def eval_ensemble_on_trials(task, model, trial_specs, *, key, n_replicates: int = N_REPLICATES):
     """Evaluate ``n_replicates`` models on the given ``trial_specs``.
 
-    Mirrors feedbax's ``_eval_ensemble`` partitioning strategy: model leaves
-    that carry the replicate dimension (i.e. arrays whose leading axis has
-    length ``n_replicates``) are vmapped over; everything else is held fixed
-    via :func:`equinox.partition` / :func:`equinox.combine`.
+    Delegates to Feedbax's public task evaluator, which derives the trial batch
+    size from the full ``TaskTrialSpec`` rather than assuming a particular
+    intervenor label. This preserves legacy disturbance trials while also
+    supporting governed native tasks whose validation trials have no
+    ``DisturbanceField`` entry.
 
     Args:
         task: The task object whose ``eval_trials`` is called per replicate.
@@ -76,24 +82,13 @@ def eval_ensemble_on_trials(task, model, trial_specs, *, key, n_replicates: int 
         States PyTree with leading replicate dimension:
         ``(n_replicates, n_trials, n_steps, ...)``.
     """
-    n_trials = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape[0]
-
-    def _is_batched_array(x):
-        return eqx.is_array(x) and x.ndim >= 1 and x.shape[0] == n_replicates
-
-    models_arrays, models_other = eqx.partition(model, _is_batched_array)
-
-    def eval_one_replicate(model_arrays, model_other, rep_key):
-        rep_model = eqx.combine(model_arrays, model_other)
-        keys = jr.split(rep_key, n_trials)
-        return task.eval_trials(rep_model, trial_specs, keys)
-
-    rep_keys = jr.split(key, n_replicates)
-    states = eqx.filter_vmap(
-        eval_one_replicate,
-        in_axes=(0, None, 0),
-    )(models_arrays, models_other, rep_keys)
-    return states
+    return feedbax_eval_ensemble_on_trials(
+        task,
+        model,
+        trial_specs,
+        key=key,
+        n_replicates=n_replicates,
+    )
 
 
 BankKind = Literal["no_catch", "catch"]
